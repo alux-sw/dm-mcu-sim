@@ -26,6 +26,12 @@ Python 3 표준 라이브러리만 사용 (Linux).
 
 브라우저에서 `http://<호스트>:8880`.
 
+ssh 로 들어가 세션이 끊겨도 남게 띄우려면:
+
+```
+nohup setsid ./run_sim.sh > ~/dm-mcu-sim.log 2>&1 < /dev/null &
+```
+
 실제 UART:
 
 ```
