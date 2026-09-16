@@ -43,6 +43,7 @@ class Sm:
         self.holding = {addr: 0 for addr in icd.HOLDING_NAMES}
         self.stats = {"ok": 0, "timeout": 0, "exception": 0}
         self.frames = collections.deque(maxlen=kFrameLogLen)
+        self.rx = {}  # 요청 종류(FC@시작주소) → 마지막 RX [t, tx_hex, rx_hex]
         self.cmds = collections.deque(maxlen=kCmdLogLen)
         self.hb_seq = 0
         self.cmd_seq = 0
@@ -61,6 +62,7 @@ class Sm:
                 self.last_error = "timeout"
                 continue
             self.frames.append([time.time(), "RX", resp.hex()])
+            self.rx["%02X@%04X" % (request[1], (request[2] << 8) | request[3])] = [time.time(), request.hex(), resp.hex()]
             is_exception = (resp[1] & 0x80) != 0
             if is_exception:
                 self.stats["exception"] += 1
@@ -218,6 +220,7 @@ class Sm:
             r = list(self.regs)
             cmds = list(self.cmds)
             frames = list(self.frames)
+            rx = dict(self.rx)
             holding = dict(self.holding)
             age = time.monotonic() - self.last_status_at
         regs = {}
@@ -263,6 +266,7 @@ class Sm:
             "holding": {icd.HOLDING_NAMES[a]: v for a, v in holding.items()},
             "cmds": cmds,
             "frames": frames,
+            "rx": rx,
         }
 
 

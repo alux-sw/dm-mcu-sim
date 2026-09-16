@@ -25,6 +25,13 @@
   pre { margin: 0; font-size: 11px; max-height: 220px; overflow: auto; background: #1a1b1e; padding: 4px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
   .err { color: #f66; }
+  .rx-head { color: #aaa; margin: 6px 0 2px; }
+  .rx-bytes { display: flex; flex-wrap: wrap; gap: 2px; }
+  .rxb { font-family: ui-monospace, monospace; font-size: 11px; width: 26px; text-align: center; background: #26272b; border-radius: 3px; padding: 1px 0; }
+  .rxb i { display: block; font-style: normal; font-size: 8px; color: #666; }
+  .rxb.hdr { color: #8ab; }
+  .rxb.chg { animation: rxflash 1.5s ease-out; }
+  @keyframes rxflash { 0% { background: #f9d71c; color: #000; } 100% { background: #26272b; color: #ddd; } }
   .station-bar { display: flex; gap: 18px; align-items: center; margin-bottom: 4px; }
   svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; background: #17181b; border-radius: 6px; }
   svg text { font-family: system-ui, sans-serif; fill: #ccc; font-size: 12px; }
@@ -206,6 +213,10 @@
     <pre id="sim_log"></pre>
   </section>
   <section class="wide">
+    <h2>마지막 RX (요청별 고정, 노란색 = 직전 표시 대비 바뀐 바이트)</h2>
+    <div id="rx_panel"></div>
+  </section>
+  <section class="wide">
     <h2>프레임 (최근 40)</h2>
     <pre id="frames"></pre>
   </section>
@@ -337,6 +348,104 @@ function fmtCmd(c) {
   return line;
 }
 
+const FC_NAMES = { 3: "READ_HOLDING", 4: "READ_INPUT", 6: "WRITE_SINGLE", 16: "WRITE_MULTI" };
+let INPUT_BY_ADDR = {};
+const rxShown = {};  // key → 마지막으로 그린 hex
+
+function rxRegName(fc, addr) {
+  let names = INPUT_BY_ADDR;
+  if (fc === 3) {
+    names = HOLDING_BY_ADDR;
+  }
+  const name = names[addr];
+  if (name === undefined) {
+    return "0x" + addr.toString(16).toUpperCase().padStart(4, "0");
+  }
+  return name;
+}
+
+function rxByteTip(fc, addr, i, len) {
+  const is_read = fc === 3 || fc === 4;
+  if (i === 0) {
+    return "슬레이브 주소";
+  }
+  if (i === 1) {
+    return "FC";
+  }
+  if (i >= len - 2) {
+    return "CRC";
+  }
+  if (is_read) {
+    if (i === 2) {
+      return "바이트 수";
+    }
+    const reg = addr + ((i - 3) >> 1);
+    let half = "HI";
+    if ((i - 3) % 2 === 1) {
+      half = "LO";
+    }
+    return `${rxRegName(fc, reg)} ${half}`;
+  }
+  if (i <= 3) {
+    return "시작 주소";
+  }
+  if (fc === 6) {
+    return rxRegName(fc, addr) + " 값";
+  }
+  return "레지스터 수";
+}
+
+function rxCell(i, hex, cls) {
+  return `<span class="rxb ${cls}" data-i="${i}"><i>${i}</i>${hex}</span>`;
+}
+
+function renderRx(rx) {
+  const panel = byId("rx_panel");
+  Object.keys(rx).sort().forEach(key => {
+    const [t, txHex, rxHex] = rx[key];
+    const fc = parseInt(key.slice(0, 2), 16);
+    const addr = parseInt(key.slice(3), 16);
+    const bytes = rxHex.match(/../g) || [];
+    let block = panel.querySelector(`[data-key="${key}"]`);
+    const is_new_layout = block === null || rxShown[key] === undefined || rxShown[key].length !== rxHex.length;
+    if (is_new_layout) {
+      if (block === null) {
+        block = document.createElement("div");
+        block.dataset.key = key;
+        panel.appendChild(block);
+      }
+      const cells = bytes.map((b, i) => {
+        let cls = "";
+        const is_hdr = i < 2 || i >= bytes.length - 2 || (fc === 3 || fc === 4) && i === 2;
+        if (is_hdr) {
+          cls = "hdr";
+        }
+        return rxCell(i, b, cls);
+      }).join("");
+      block.innerHTML = `<div class="rx-head"></div><div class="rx-bytes">${cells}</div>`;
+      block.querySelectorAll(".rxb").forEach(el => {
+        el.title = `[${el.dataset.i}] ` + rxByteTip(fc, addr, parseInt(el.dataset.i), bytes.length);
+      });
+    } else {
+      const old = rxShown[key].match(/../g);
+      const cells = block.querySelectorAll(".rxb");
+      bytes.forEach((b, i) => {
+        if (b === old[i]) {
+          return;
+        }
+        const el = cells[i];
+        el.lastChild.textContent = b;
+        el.classList.remove("chg");
+        void el.offsetWidth;
+        el.classList.add("chg");
+      });
+    }
+    rxShown[key] = rxHex;
+    const fcName = FC_NAMES[fc] || "?";
+    block.firstChild.textContent = `0x${fc.toString(16).toUpperCase().padStart(2, "0")} ${fcName} @0x${addr.toString(16).toUpperCase().padStart(4, "0")} (${rxRegName(fc, addr)})  →  ${bytes.length} bytes  |  ${fmtTime(t)}  |  TX ${txHex}`;
+  });
+}
+
 function refreshSettings(holding) {
   document.querySelectorAll("#set_tbl [data-addr]").forEach(el => {
     const is_editing = el === document.activeElement;
@@ -434,6 +543,7 @@ function renderMaster(s) {
   const bmsKeys = Object.keys(r).filter(k => k.startsWith("BMS_") && !/_(HI|LO)$/.test(k));
   setHtml("bms_tbl", bmsKeys.map(k => `<div title="${escapeAttr(tip(k))}"><span style="color:#aaa">${k.slice(4)}</span> ${r[k]}</div>`).join(""));
   setText("cmd_log", s.cmds.map(fmtCmd).join("\n"));
+  renderRx(s.rx);
   setText("frames", s.frames.slice().reverse().map(f => `${fmtTime(f[0])} ${f[1]} ${f[2].replace(/(..)/g, "$1 ")}`).join("\n"));
   refreshSettings(s.holding);
 }
@@ -627,6 +737,9 @@ getJson("/api/icd").then(info => {
   ICD = info;
   Object.keys(info.holding).forEach(name => {
     HOLDING_BY_ADDR[info.holding[name][0]] = name;
+  });
+  Object.keys(info.inputs).forEach(name => {
+    INPUT_BY_ADDR[info.inputs[name][0]] = name;
   });
   applyStaticTitles();
 });

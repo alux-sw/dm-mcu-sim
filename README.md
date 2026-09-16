@@ -6,7 +6,7 @@ ICD-XS-SM-MCU v1.1 (Station Manager ↔ 스테이션 MCU, Modbus RTU) 프로토�
 |---|---|
 | `sm_master.py` | SM 쪽 Modbus 마스터. 상태 10 Hz·BMS 1/0.2 Hz·식별 1회·하트비트 1 Hz 폴링, 명령·설정 쓰기, 시작 시 보유 레지스터 0x03 동기화, HTTP :8880 |
 | `mcu_sim.py` | MCU 쪽 Modbus 슬레이브 시뮬레이터. 레지스터 맵·명령 접수/거부·HI-1~6·SAFE-HOLD/FAULT·하트비트·현장 버튼·정비 모드·BMS 미러, HTTP :8881 |
-| `gui.html` | 디버그 GUI. 스테이션 애니메이션(GDU K03 식: 정면 도어가 아래로 젖혀지고 착륙판이 정면으로 슬라이드), 레지스터 표, 명령·설정·주입. 값에 마우스를 올리면 ICD 설명 툴팁. sm_master 가 `/` 로 내보냄 |
+| `gui.html` | 디버그 GUI. 스테이션 애니메이션(GDU K03 식: 정면 도어가 아래로 젖혀지고 착륙판이 정면으로 슬라이드), 레지스터 표, 명령·설정·주입, 요청 종류별 마지막 RX 바이트 표(바뀐 바이트 노란색 깜빡임). 값에 마우스를 올리면 ICD 설명 툴팁. sm_master 가 `/` 로 내보냄 |
 | `icd.py` | 레지스터 주소·명령·거부 코드·설명 |
 | `modbus_rtu.py` | CRC16·프레임 조립/해석·시리얼(termios) |
 | `webapi.py` | JSON HTTP 서버 |
@@ -49,7 +49,7 @@ python3 test_sim.py
 
 sm_master (:8880)
 
-- `GET /api/state` — 입력 레지스터 전부(이름별)·해석값·링크 통계·명령 로그·프레임 로그·마지막 보유 레지스터 값
+- `GET /api/state` — 입력 레지스터 전부(이름별)·해석값·링크 통계·명령 로그·프레임 로그·요청 종류별 마지막 RX(`rx`, `FC@시작주소` → `[t, tx_hex, rx_hex]`)·마지막 보유 레지스터 값
 - `GET /api/icd` — 레지스터·명령·거부 코드 설명 (툴팁용)
 - `POST /api/cmd` `{"code":1,"arg0":0,"arg1":0}` — CMD_SEQ 자동 증가, 0x10 한 프레임으로 씀
 - `POST /api/write` `{"addr":33,"value":3}` — 보유 레지스터 0x06 쓰기
