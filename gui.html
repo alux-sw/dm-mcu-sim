@@ -26,7 +26,13 @@
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
   .err { color: #f66; }
   .rx-head { color: #aaa; margin: 6px 0 2px; }
-  .rx-bytes { display: flex; flex-wrap: wrap; gap: 2px; }
+  .rx-bytes { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
+  .rx-sec { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 4px 3px 6px; border-left: 3px solid var(--sec, #666); background: #202124; border-radius: 3px; }
+  .rx-sec > b { width: 100%; font-size: 9px; font-weight: normal; color: var(--sec, #888); }
+  .rx-grp { display: inline-flex; flex-direction: column; align-items: center; }
+  .rx-grp > b { font-size: 8px; font-weight: normal; color: #9ab; white-space: nowrap; }
+  .rx-grp > b.dim { color: #555; }
+  .rx-grp > div { display: flex; gap: 1px; }
   .rxb { font-family: ui-monospace, monospace; font-size: 11px; width: 26px; text-align: center; background: #26272b; border-radius: 3px; padding: 1px 0; }
   .rxb i { display: block; font-style: normal; font-size: 8px; color: #666; }
   .rxb.hdr { color: #8ab; }
@@ -353,9 +359,9 @@ let INPUT_BY_ADDR = {};
 const rxShown = {};  // key → 마지막으로 그린 hex
 
 function rxRegName(fc, addr) {
-  let names = INPUT_BY_ADDR;
-  if (fc === 3) {
-    names = HOLDING_BY_ADDR;
+  let names = HOLDING_BY_ADDR;  // 0x03 읽기·0x06/0x10 쓰기는 보유 레지스터
+  if (fc === 4) {
+    names = INPUT_BY_ADDR;
   }
   const name = names[addr];
   if (name === undefined) {
@@ -395,11 +401,113 @@ function rxByteTip(fc, addr, i, len) {
   return "레지스터 수";
 }
 
+const INPUT_SECTIONS = [[0x00, "명령 피드백"], [0x10, "MCU 상태"], [0x20, "커버/슬라이드"], [0x30, "충전기"], [0x40, "환경"], [0x50, "전원"], [0x60, "출력 되읽기"], [0x80, "BMS"], [0xB0, "BMS 식별"]];
+const HOLDING_SECTIONS = [[0x00, "하트비트"], [0x10, "명령"], [0x20, "설정"]];
+const SEC_COLORS = ["#8ab", "#a8b", "#ab8", "#ba8", "#b8a", "#8ba", "#aa9", "#99a", "#9a9"];
+
+function rxSection(fc, addr) {
+  let sections = INPUT_SECTIONS;
+  if (fc === 3) {
+    sections = HOLDING_SECTIONS;
+  }
+  let found = 0;
+  sections.forEach((sec, i) => {
+    if (addr >= sec[0]) {
+      found = i;
+    }
+  });
+  return [sections[found][1] + " 0x" + sections[found][0].toString(16).toUpperCase().padStart(2, "0"), SEC_COLORS[found % SEC_COLORS.length]];
+}
+
 function rxCell(i, hex, cls) {
   return `<span class="rxb ${cls}" data-i="${i}"><i>${i}</i>${hex}</span>`;
 }
 
+function rxGroup(label, cellsHtml, isDim) {
+  let cls = "";
+  if (isDim) {
+    cls = "dim";
+  }
+  return `<div class="rx-grp"><b class="${cls}">${label}</b><div>${cellsHtml}</div></div>`;
+}
+
+function rxSectionHtml(label, color, groupsHtml) {
+  return `<div class="rx-sec" style="--sec:${color}"><b>${label}</b>${groupsHtml}</div>`;
+}
+
+function rxLayoutHtml(fc, addr, bytes) {
+  const n = bytes.length;
+  const is_read = fc === 3 || fc === 4;
+  const crc = rxSectionHtml("CRC", "#777", rxGroup("CRC16", rxCell(n - 2, bytes[n - 2], "hdr") + rxCell(n - 1, bytes[n - 1], "hdr")));
+  if (!is_read) {
+    let valueLabel = "레지스터 수";
+    if (fc === 6) {
+      valueLabel = rxRegName(fc, addr) + " 값";
+    }
+    const head = rxSectionHtml("헤더", "#777", rxGroup("주소", rxCell(0, bytes[0], "hdr")) + rxGroup("FC", rxCell(1, bytes[1], "hdr")));
+    const body = rxSectionHtml("쓰기 반향", "#8ab", rxGroup("시작 주소", rxCell(2, bytes[2], "") + rxCell(3, bytes[3], "")) + rxGroup(valueLabel, rxCell(4, bytes[4], "") + rxCell(5, bytes[5], "")));
+    return head + body + crc;
+  }
+  const head = rxSectionHtml("헤더", "#777", rxGroup("주소", rxCell(0, bytes[0], "hdr")) + rxGroup("FC", rxCell(1, bytes[1], "hdr")) + rxGroup("바이트 수", rxCell(2, bytes[2], "hdr")));
+  const regCount = (n - 5) >> 1;
+  let html = head;
+  let secLabel = null;
+  let secColor = "";
+  let groups = "";
+  let reserved = null;  // 연속된 예약 주소 묶음 {from, to, cells}
+  const flushReserved = () => {
+    if (reserved === null) {
+      return;
+    }
+    const hex = a => "0x" + a.toString(16).toUpperCase().padStart(2, "0");
+    let label = "예약 " + hex(reserved.from);
+    if (reserved.to !== reserved.from) {
+      label += "~" + hex(reserved.to);
+    }
+    groups += rxGroup(label, reserved.cells, true);
+    reserved = null;
+  };
+  for (let r = 0; r < regCount; r++) {
+    const reg = addr + r;
+    const [label, color] = rxSection(fc, reg);
+    if (label !== secLabel) {
+      flushReserved();
+      if (secLabel !== null) {
+        html += rxSectionHtml(secLabel, secColor, groups);
+      }
+      secLabel = label;
+      secColor = color;
+      groups = "";
+    }
+    const i = 3 + r * 2;
+    const cells = rxCell(i, bytes[i], "") + rxCell(i + 1, bytes[i + 1], "");
+    let name = rxRegName(fc, reg);
+    const is_reserved = name.startsWith("0x");
+    if (is_reserved) {
+      if (reserved === null) {
+        reserved = { from: reg, to: reg, cells: "" };
+      }
+      reserved.to = reg;
+      reserved.cells += cells;
+      continue;
+    }
+    flushReserved();
+    if (label.startsWith("BMS") && name.startsWith("BMS_")) {
+      name = name.slice(4);
+    }
+    groups += rxGroup(name, cells, false);
+  }
+  flushReserved();
+  if (secLabel !== null) {
+    html += rxSectionHtml(secLabel, secColor, groups);
+  }
+  return html + crc;
+}
+
 function renderRx(rx) {
+  if (ICD === null) {
+    return;
+  }
   const panel = byId("rx_panel");
   Object.keys(rx).sort().forEach(key => {
     const [t, txHex, rxHex] = rx[key];
@@ -414,15 +522,7 @@ function renderRx(rx) {
         block.dataset.key = key;
         panel.appendChild(block);
       }
-      const cells = bytes.map((b, i) => {
-        let cls = "";
-        const is_hdr = i < 2 || i >= bytes.length - 2 || (fc === 3 || fc === 4) && i === 2;
-        if (is_hdr) {
-          cls = "hdr";
-        }
-        return rxCell(i, b, cls);
-      }).join("");
-      block.innerHTML = `<div class="rx-head"></div><div class="rx-bytes">${cells}</div>`;
+      block.innerHTML = `<div class="rx-head"></div><div class="rx-bytes">${rxLayoutHtml(fc, addr, bytes)}</div>`;
       block.querySelectorAll(".rxb").forEach(el => {
         el.title = `[${el.dataset.i}] ` + rxByteTip(fc, addr, parseInt(el.dataset.i), bytes.length);
       });
