@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<title>DM ↔ MCU 디버그</title>
+<title>SM ↔ MCU 디버그</title>
 <style>
   body { font-family: system-ui, sans-serif; font-size: 13px; margin: 0; background: #1e1f22; color: #ddd; }
   header { display: flex; gap: 24px; align-items: center; padding: 8px 14px; background: #2b2d31; border-bottom: 1px solid #444; position: sticky; top: 0; z-index: 1; }
@@ -28,7 +28,10 @@
   .station-bar { display: flex; gap: 18px; align-items: center; margin-bottom: 4px; }
   svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; background: #17181b; border-radius: 6px; }
   svg text { font-family: system-ui, sans-serif; fill: #ccc; font-size: 12px; }
-  #cover_front, #cover_side, #platform { transition: transform .2s linear; }
+  .door { fill: #8a8f99; transition: transform .2s linear; }
+  #door_front { transform-origin: 566px 290px; }
+  #door_side { transform-origin: 210px 286px; }
+  #platform { transition: transform .2s linear; }
   .moving { stroke: #ffb300; stroke-width: 2; }
   .hide { display: none; }
   .led.p0 { fill: #333; }
@@ -50,7 +53,10 @@
   .dim { opacity: .2; }
   .blink { animation: blink .5s infinite; }
   .spin { animation: spin 1s linear infinite; transform-origin: center; transform-box: fill-box; }
-  #estop_btn { fill: #7f1d1d; }
+  .pbtn { fill: #555; stroke: #888; cursor: pointer; }
+  .pbtn:hover { stroke: #fff; }
+  .pbtn.on { fill: #ffb300; }
+  #estop_btn { fill: #7f1d1d; stroke: #a33; cursor: pointer; }
   #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
   #banner { font-size: 26px; font-weight: bold; }
   @keyframes blink { 50% { opacity: .15; } }
@@ -60,64 +66,73 @@
 </head>
 <body>
 <header>
-  <b>DM ↔ MCU 디버그</b>
+  <b>SM ↔ MCU 디버그</b>
   <span id="link"></span>
   <span id="linkerr" class="err"></span>
 </header>
 <main>
   <section class="wide">
     <div class="station-bar">
-      <h2 style="margin:0">스테이션</h2>
+      <h2 style="margin:0">스테이션 (측면에서 본 모습, 오른쪽이 정면)</h2>
       <span>커버 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="cover_sec"></span>
       <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
       <span id="status_line"></span>
     </div>
-    <svg viewBox="0 0 900 330">
-      <text id="banner" x="450" y="52" text-anchor="middle"></text>
-      <text id="env_text" x="885" y="30" text-anchor="end"></text>
-      <text x="279" y="98" text-anchor="middle">정면 도어</text>
-      <text x="533" y="98" text-anchor="middle">측면 도어</text>
+    <svg viewBox="0 0 900 340">
+      <text id="banner" x="450" y="44" text-anchor="middle"></text>
+      <text id="env_text" x="885" y="24" text-anchor="end"></text>
+      <text id="maint_text" x="885" y="44" text-anchor="end" fill="#ce93d8"></text>
+      <text id="hb_text" x="15" y="24"></text>
       <line x1="0" y1="300" x2="900" y2="300" stroke="#555"/>
-      <rect id="interior" class="interior" x="152" y="130" width="508" height="160"/>
-      <rect id="flood" class="hide" x="152" y="278" width="508" height="12" fill="#1e88e5" opacity=".6"/>
-      <rect x="140" y="290" width="520" height="10" fill="#555"/>
-      <rect x="140" y="130" width="12" height="170" fill="#666"/>
-      <rect x="140" y="118" width="520" height="12" fill="#444"/>
-      <rect id="cover_front" x="152" y="104" width="254" height="14" fill="#8a8f99"/>
-      <rect id="cover_side" x="406" y="104" width="254" height="14" fill="#8a8f99"/>
-      <line x1="300" y1="232" x2="880" y2="232" stroke="#777" stroke-dasharray="6 4"/>
-      <text x="700" y="248" fill="#888">슬라이드 레일</text>
+      <rect id="interior" class="interior" x="158" y="110" width="404" height="180"/>
+      <rect id="flood" class="hide" x="158" y="274" width="404" height="16" fill="#1e88e5" opacity=".6"/>
+      <rect x="150" y="290" width="420" height="10" fill="#555"/>
+      <rect x="150" y="110" width="8" height="180" fill="#666"/>
+      <rect x="150" y="102" width="420" height="8" fill="#666"/>
+      <rect x="562" y="110" width="8" height="20" fill="#666"/>
+      <rect id="led" class="led p0" x="160" y="94" width="400" height="6" rx="3"/>
+      <text x="360" y="88" text-anchor="middle" font-size="10">상태 LED</text>
+      <line x1="300" y1="240" x2="880" y2="240" stroke="#777" stroke-dasharray="6 4"/>
+      <text x="760" y="256" fill="#888">슬라이드 레일 (전개 방향 →)</text>
+      <rect id="door_side" class="door" x="170" y="200" width="80" height="86" fill="#7a7f88"/>
+      <text x="210" y="196" text-anchor="middle" font-size="10">측면 도어</text>
       <g id="platform">
-        <rect id="platform_rect" x="300" y="222" width="200" height="12" fill="#9aa4ad"/>
-        <rect id="pad1" class="pad" x="370" y="216" width="18" height="6"/>
-        <rect id="pad2" class="pad" x="412" y="216" width="18" height="6"/>
+        <rect id="platform_rect" x="300" y="226" width="160" height="14" rx="3" fill="#9aa4ad"/>
+        <rect id="pad1" class="pad" x="366" y="220" width="18" height="6"/>
+        <rect id="pad2" class="pad" x="410" y="220" width="18" height="6"/>
         <g id="drone" class="hide">
-          <line x1="352" y1="203" x2="448" y2="203" stroke="#aaa" stroke-width="3"/>
-          <ellipse cx="352" cy="199" rx="20" ry="4" fill="#999"/>
-          <ellipse cx="448" cy="199" rx="20" ry="4" fill="#999"/>
-          <rect x="380" y="194" width="40" height="20" rx="5" fill="#cfd8dc"/>
-          <rect x="386" y="214" width="6" height="4" fill="#555"/>
-          <rect x="408" y="214" width="6" height="4" fill="#555"/>
+          <line x1="350" y1="206" x2="450" y2="206" stroke="#aaa" stroke-width="3"/>
+          <ellipse cx="350" cy="202" rx="20" ry="4" fill="#999"/>
+          <ellipse cx="450" cy="202" rx="20" ry="4" fill="#999"/>
+          <rect x="378" y="198" width="44" height="18" rx="5" fill="#cfd8dc"/>
+          <rect x="384" y="216" width="6" height="4" fill="#555"/>
+          <rect x="410" y="216" width="6" height="4" fill="#555"/>
         </g>
         <text id="bolt" class="hide" x="400" y="262" text-anchor="middle" font-size="18">⚡</text>
         <text id="chg_text" x="400" y="280" text-anchor="middle"></text>
       </g>
-      <rect id="led" class="led p0" x="126" y="140" width="8" height="150" rx="4"/>
-      <text x="130" y="134" text-anchor="middle" font-size="10">LED</text>
-      <circle id="lamp_out" class="lamp" cx="118" cy="110" r="8"/>
-      <text x="118" y="95" text-anchor="middle" font-size="10">외부등</text>
-      <circle id="lamp_in" class="lamp" cx="400" cy="142" r="6"/>
-      <text x="400" y="158" text-anchor="middle" font-size="10">내부등</text>
-      <text id="buzzer" class="dim" x="172" y="160" font-size="16">🔔</text>
-      <circle id="indicator" cx="205" cy="153" r="5" fill="#444"/>
-      <text x="190" y="176" text-anchor="middle" font-size="10">알람</text>
-      <text id="heater" class="dim" x="560" y="160" font-size="16">🔥</text>
-      <text id="cooler" class="dim" x="590" y="160" font-size="16">❄️</text>
-      <text id="fan" class="dim" x="620" y="160" font-size="16">🌀</text>
-      <text x="595" y="176" text-anchor="middle" font-size="10">공조</text>
-      <circle id="estop_btn" cx="60" cy="250" r="16"/>
-      <text x="60" y="285" text-anchor="middle" font-size="10">E-STOP</text>
-      <text id="hb_text" x="15" y="30"></text>
+      <rect id="door_front" class="door" x="562" y="130" width="8" height="160"/>
+      <text x="646" y="316" text-anchor="middle" font-size="10">정면 도어 (아래로 젖혀짐)</text>
+      <circle id="lamp_out" class="lamp" cx="586" cy="112" r="7"/>
+      <text x="612" y="116" font-size="10">외부등</text>
+      <circle id="lamp_in" class="lamp" cx="360" cy="122" r="6"/>
+      <text x="360" y="138" text-anchor="middle" font-size="10">내부등</text>
+      <text id="buzzer" class="dim" x="172" y="140" font-size="16">🔔</text>
+      <circle id="indicator" cx="205" cy="133" r="5" fill="#444"/>
+      <text x="190" y="156" text-anchor="middle" font-size="10">알람</text>
+      <text id="heater" class="dim" x="480" y="140" font-size="16">🔥</text>
+      <text id="cooler" class="dim" x="510" y="140" font-size="16">❄️</text>
+      <text id="fan" class="dim" x="540" y="140" font-size="16">🌀</text>
+      <text x="515" y="156" text-anchor="middle" font-size="10">공조</text>
+      <circle id="estop_btn" cx="60" cy="140" r="16"/>
+      <text x="60" y="172" text-anchor="middle" font-size="10">E-STOP (클릭)</text>
+      <text x="60" y="200" text-anchor="middle" font-size="10">현장 버튼 (클릭)</text>
+      <circle id="btn_door" class="pbtn" cx="45" cy="222" r="9"/>
+      <text x="60" y="226" font-size="10">도어</text>
+      <circle id="btn_slide" class="pbtn" cx="45" cy="250" r="9"/>
+      <text x="60" y="254" font-size="10">슬라이드</text>
+      <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
+      <text x="60" y="282" font-size="10">정비</text>
     </svg>
   </section>
   <section>
@@ -150,10 +165,7 @@
       <tr data-reg="SET_ALARM_OUT"><td>알람 출력</td><td><label><input type="checkbox" class="bit" data-addr="34" data-bit="0"> 부저</label> <label><input type="checkbox" class="bit" data-addr="34" data-bit="1"> LED</label></td><td id="rb_alarm" data-reg="ALARM_OUT_STATE"></td></tr>
       <tr data-reg="SET_LED_PATTERN"><td>LED 패턴</td><td><select data-addr="35" id="led_sel"></select></td><td id="rb_led" data-reg="LED_PATTERN"></td></tr>
       <tr data-reg="SET_CHG_CURRENT_LIMIT_10mA"><td>충전 전류 상한 (10mA)</td><td><input type="number" data-addr="36" value="0"></td><td id="rb_chglim" data-reg="CHG_CURRENT_LIMIT_10mA"></td></tr>
-      <tr data-reg="CFG_COVER_TIMEOUT_100ms"><td>커버 제한 (100ms)</td><td><input type="number" data-addr="48" value="300"></td><td></td></tr>
-      <tr data-reg="CFG_SLIDE_TIMEOUT_100ms"><td>슬라이드 제한 (100ms)</td><td><input type="number" data-addr="49" value="300"></td><td></td></tr>
-      <tr data-reg="CFG_CONTACT_TEMP_MAX_x10"><td>접점 온도 상한 (x10)</td><td><input type="number" data-addr="50" value="600"></td><td></td></tr>
-      <tr data-reg="CFG_HB_TIMEOUT_100ms"><td>HB 타임아웃 (100ms)</td><td><input type="number" data-addr="51" value="30"></td><td></td></tr>
+      <tr data-reg="SET_MAINT_MODE"><td>정비 모드</td><td><select data-addr="37"><option value="0">off</option><option value="1">on</option></select></td><td id="rb_maint" data-reg="MAINT_ACTIVE"></td></tr>
     </table>
   </section>
   <section>
@@ -161,33 +173,27 @@
     <div id="bms_tbl" class="grid2"></div>
   </section>
   <section>
-    <h2>명령 (DM → MCU)</h2>
+    <h2>명령 (SM → MCU)</h2>
     <div>
-      커버 마스크 <select id="cover_mask"><option value="0">전체</option><option value="1">정면</option><option value="2">측면</option></select>
       <button data-code="1">COVER_OPEN</button><button data-code="2">COVER_CLOSE</button>
       <button data-code="3">SLIDE_EXTEND</button><button data-code="4">SLIDE_RETRACT</button>
     </div>
     <div>
       충전 상한(10mA, 0=설정값) <input type="number" id="chg_arg" value="0">
       <button data-code="5">CHARGE_ON</button><button data-code="6">CHARGE_OFF</button>
+    </div>
+    <div>
       <button data-code="7">BMS_POWER_ON</button><button data-code="8">BMS_POWER_OFF</button>
+      <button data-code="9">MOTION_STOP</button><button data-code="11">CLEAR_FAULT</button>
     </div>
     <div>
-      <button data-code="9">MOTION_STOP</button><button data-code="10">CLEAR_HOLD</button><button data-code="11">CLEAR_FAULT</button>
-    </div>
-    <div>
-      BMS 주소 <input type="number" id="bms_addr" value="128"> 값 <input type="number" id="bms_val" value="1">
-      <button data-code="12">BMS_READ_WORD</button><button data-code="13">BMS_WRITE_WORD</button>
-    </div>
-    <div>
-      <button data-code="14">MCU_RESET</button>
       전원 재투입 지연(초) <input type="number" id="pc_delay" value="3">
       <button data-code="15">STATION_POWER_CYCLE</button>
       임의 코드 <input type="number" id="raw_code" value="255"><button data-code="raw">전송</button>
     </div>
   </section>
   <section>
-    <h2>명령 로그 (DM 시점)</h2>
+    <h2>명령 로그 (SM 시점)</h2>
     <pre id="cmd_log"></pre>
   </section>
   <section>
@@ -211,17 +217,21 @@ const MCU_STATUS_BITS = ["estop", "safe_hold", "fault", "hb_timeout", "sd_ok", "
 const MCU_STATUS_BAD = ["estop", "safe_hold", "fault", "hb_timeout"];
 const HI_BITS = ["HI-1", "HI-2", "HI-3", "HI-4", "HI-5", "HI-6"];
 const INJECT_BOOLS = ["estop", "ac_ok", "flood", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
-const INJECT_NUMS = ["contact_temp", "temp_in", "hum_in"];
-const CMD_COVER = [1, 2];
+const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
+const INJECT_NUMS = ["contact_temp", "temp_in", "hum_in", "motion_timeout_sec"];
 const CMD_CHARGE_ON = 5;
-const CMD_BMS_WORD = [12, 13];
-const CMD_MCU_RESET = 14;
 const CMD_POWER_CYCLE = 15;
-const MCU_RESET_MAGIC = 0x5A5A;
 const POWER_CYCLE_MAGIC = 0xA5A5;
-const COVER_FRONT_TRAVEL = -250;
-const COVER_SIDE_TRAVEL = 240;
 const SLIDE_TRAVEL = 330;
+const DERIVED_REGS = {
+  BMS_CURRENT_mA: ["BMS_CURRENT_mA_HI", "BMS_CURRENT_mA_LO"],
+  BMS_FAULT_FLAGS: ["BMS_FAULT_FLAGS_HI", "BMS_FAULT_FLAGS_LO"],
+  BMS_PF_STATUS: ["BMS_PF_STATUS_HI", "BMS_PF_STATUS_LO"],
+  BMS_SAFETY_STATUS: ["BMS_SAFETY_STATUS_HI", "BMS_SAFETY_STATUS_LO"],
+};
+let ICD = null;
+let HOLDING_BY_ADDR = {};
+let simState = null;
 
 async function getJson(url) {
   const r = await fetch(url);
@@ -248,14 +258,6 @@ function setHtml(id, html) {
 function setClass(id, cls, on) {
   byId(id).classList.toggle(cls, on);
 }
-
-let ICD = null;
-const DERIVED_REGS = {
-  BMS_CURRENT_mA: ["BMS_CURRENT_mA_HI", "BMS_CURRENT_mA_LO"],
-  BMS_FAULT_FLAGS: ["BMS_FAULT_FLAGS_HI", "BMS_FAULT_FLAGS_LO"],
-  BMS_PF_STATUS: ["BMS_PF_STATUS_HI", "BMS_PF_STATUS_LO"],
-  BMS_SAFETY_STATUS: ["BMS_SAFETY_STATUS_HI", "BMS_SAFETY_STATUS_LO"],
-};
 
 function escapeAttr(text) {
   return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -299,40 +301,6 @@ function rows(id, pairs) {
   setHtml(id, pairs.map(p => `<tr title="${escapeAttr(tip(p[2], p[3]))}"><td>${p[0]}</td><td>${p[1]}</td></tr>`).join(""));
 }
 
-let HOLDING_BY_ADDR = {};
-
-function refreshSettings(holding) {
-  document.querySelectorAll("#set_tbl [data-addr]").forEach(el => {
-    const is_editing = el === document.activeElement;
-    if (is_editing) {
-      return;
-    }
-    const name = HOLDING_BY_ADDR[el.dataset.addr];
-    if (name === undefined) {
-      return;
-    }
-    const value = holding[name];
-    const is_bit = el.classList.contains("bit");
-    if (is_bit) {
-      el.checked = ((value >> parseInt(el.dataset.bit)) & 1) === 1;
-    } else {
-      el.value = value;
-    }
-  });
-}
-
-function applyStaticTitles() {
-  byId("mcu_status").title = tip("MCU_STATUS");
-  byId("hard_block").title = tip("HARD_BLOCK");
-  document.querySelectorAll("[data-reg]").forEach(el => { el.title = tip(el.dataset.reg); });
-  document.querySelectorAll("button[data-code]").forEach(b => {
-    const entry = ICD.cmds[b.dataset.code];
-    if (entry !== undefined) {
-      b.title = `0x${parseInt(b.dataset.code).toString(16).toUpperCase().padStart(4, "0")} ${entry[0]}: ${entry[1]}`;
-    }
-  });
-}
-
 function chips(list, all, badSet) {
   return all.map(name => {
     let cls = "chip";
@@ -369,6 +337,40 @@ function fmtCmd(c) {
   return line;
 }
 
+function refreshSettings(holding) {
+  document.querySelectorAll("#set_tbl [data-addr]").forEach(el => {
+    const is_editing = el === document.activeElement;
+    if (is_editing) {
+      return;
+    }
+    const name = HOLDING_BY_ADDR[el.dataset.addr];
+    if (name === undefined) {
+      return;
+    }
+    const value = holding[name];
+    const is_bit = el.classList.contains("bit");
+    if (is_bit) {
+      el.checked = ((value >> parseInt(el.dataset.bit)) & 1) === 1;
+    } else {
+      el.value = value;
+    }
+  });
+}
+
+function applyStaticTitles() {
+  byId("mcu_status").title = tip("MCU_STATUS");
+  byId("hard_block").title = tip("HARD_BLOCK");
+  document.querySelectorAll("[data-reg]").forEach(el => {
+    el.title = tip(el.dataset.reg);
+  });
+  document.querySelectorAll("button[data-code]").forEach(b => {
+    const entry = ICD.cmds[b.dataset.code];
+    if (entry !== undefined) {
+      b.title = `0x${parseInt(b.dataset.code).toString(16).toUpperCase().padStart(4, "0")} ${entry[0]}: ${entry[1]}`;
+    }
+  });
+}
+
 function renderMaster(s) {
   const r = s.regs;
   const d = s.decoded;
@@ -383,9 +385,9 @@ function renderMaster(s) {
   setHtml("hard_block", chips(d.hard_block, HI_BITS, HI_BITS));
   rows("mcu_tbl", [
     ["FAULT_CODE", d.fault, "FAULT_CODE", reasonTip(d.fault)],
-    ["MCU_TICK", r.MCU_TICK, "MCU_TICK"],
     ["FW", d.fw, ["FW_VER_MAJ_MIN", "FW_VER_PATCH"]],
-    ["UPTIME", r.UPTIME_s + " s", ["UPTIME_HI", "UPTIME_LO"]],
+    ["LOCAL_BTN", chips(d.local_btn, ["BTN-DOOR", "BTN-SLIDE"]), "LOCAL_BTN"],
+    ["정비 모드", `${r.MAINT_ACTIVE} / ${d.maint_source}`, ["MAINT_ACTIVE", "MAINT_SOURCE"]],
   ]);
   let ackText = "접수";
   if (r.ACK_RESULT !== 0) {
@@ -398,10 +400,10 @@ function renderMaster(s) {
   ]);
   rows("motion_tbl", [
     ["COVER_STATE", d.cover_state, "COVER_STATE"],
-    ["COVER_LIMITS", chips(d.cover_limits, ["front_closed", "front_open", "side_closed", "side_open", "front_door", "side_door"]), "COVER_LIMITS"],
+    ["COVER_LIMITS", chips(d.cover_limits, ["closed", "open"]), "COVER_LIMITS"],
     ["COVER_CURRENT", r.COVER_CURRENT_mA + " mA", "COVER_CURRENT_mA"],
     ["SLIDE_STATE", d.slide_state, "SLIDE_STATE"],
-    ["SLIDE_LIMITS", chips(d.slide_limits, ["home", "extended"]), "SLIDE_LIMITS"],
+    ["SLIDE_LIMITS", chips(d.slide_limits, ["home", "extended", "load_sensor"]), "SLIDE_LIMITS"],
     ["SLIDE_CURRENT", r.SLIDE_CURRENT_mA + " mA", "SLIDE_CURRENT_mA"],
     ["SLIDE_ENCODER", r.SLIDE_ENCODER, "SLIDE_ENCODER"],
   ]);
@@ -428,6 +430,7 @@ function renderMaster(s) {
   setHtml("rb_alarm", chips(d.alarm, ["buzzer", "indicator"]));
   setText("rb_led", "되읽기 " + d.led_pattern);
   setText("rb_chglim", "적용 " + r.CHG_CURRENT_LIMIT_10mA);
+  setText("rb_maint", `되읽기 ${r.MAINT_ACTIVE} (${d.maint_source})`);
   const bmsKeys = Object.keys(r).filter(k => k.startsWith("BMS_") && !/_(HI|LO)$/.test(k));
   setHtml("bms_tbl", bmsKeys.map(k => `<div title="${escapeAttr(tip(k))}"><span style="color:#aaa">${k.slice(4)}</span> ${r[k]}</div>`).join(""));
   setText("cmd_log", s.cmds.map(fmtCmd).join("\n"));
@@ -440,11 +443,12 @@ function renderStation(s) {
   const inj = s.inject;
   const is_cover_motion = n.active !== null && n.active.name.startsWith("COVER");
   const is_slide_motion = n.active !== null && n.active.name.startsWith("SLIDE");
-  byId("cover_front").style.transform = `translateX(${COVER_FRONT_TRAVEL * n.front_pos}px)`;
-  byId("cover_side").style.transform = `translateX(${COVER_SIDE_TRAVEL * n.side_pos}px)`;
+  const angle = n.cover_pos * 90;
+  byId("door_front").style.transform = `rotate(${angle}deg)`;
+  byId("door_side").style.transform = `scaleY(${Math.max(0.05, Math.cos(angle * Math.PI / 180))})`;
   byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
-  setClass("cover_front", "moving", is_cover_motion);
-  setClass("cover_side", "moving", is_cover_motion);
+  setClass("door_front", "moving", is_cover_motion);
+  setClass("door_side", "moving", is_cover_motion);
   setClass("platform_rect", "moving", is_slide_motion);
   setClass("drone", "hide", !inj.drone_detected);
   setClass("pad1", "on", n.chg_on);
@@ -477,8 +481,14 @@ function renderStation(s) {
   setClass("fan", "dim", (n.climate_out & 4) === 0);
   setClass("fan", "spin", (n.climate_out & 4) !== 0);
   setClass("estop_btn", "on", inj.estop);
+  INJECT_PULSES.forEach(k => setClass(k, "on", inj[k]));
   setClass("flood", "hide", !inj.flood);
   setText("env_text", `내부 ${inj.temp_in.toFixed(1)} ℃ / ${inj.hum_in.toFixed(0)} %   접점 ${inj.contact_temp.toFixed(1)} ℃`);
+  let maintText = "";
+  if (n.maint_active === 1) {
+    maintText = `정비 모드 (${n.maint_source})`;
+  }
+  setText("maint_text", maintText);
   let hbText = "HB age " + n.hb_age + " s";
   if (n.hb_timeout) {
     hbText += "  (타임아웃)";
@@ -497,7 +507,12 @@ function renderStation(s) {
   byId("banner").setAttribute("fill", bannerColor);
   let status = `커버 ${n.cover_state} · 슬라이드 ${n.slide_state} · LED ${LED_NAMES[n.led_pattern]}`;
   if (n.active !== null) {
-    status += ` · ${n.active.name} ${n.progress}%`;
+    status += ` · ${n.active.name}`;
+    if (n.active.local) {
+      status += " (현장 버튼)";
+    } else {
+      status += ` ${n.progress}%`;
+    }
   }
   setText("status_line", status);
 }
@@ -510,6 +525,9 @@ function bindInject(root) {
       value = el.checked;
     }
     postJson(SIM + "/api/inject", { [el.dataset.key]: value });
+  }));
+  root.querySelectorAll("button[data-key]").forEach(el => el.addEventListener("click", () => {
+    postJson(SIM + "/api/inject", { [el.dataset.key]: true });
   }));
 }
 
@@ -529,13 +547,15 @@ function refreshInject(root, inj) {
 }
 
 function renderSim(s) {
+  simState = s;
   const inj = s.inject;
   const n = s.internal;
   const box = byId("inject");
   if (box.children.length === 0) {
     const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
+    const pulseHtml = INJECT_PULSES.map(k => `<button data-key="${k}">${k} 누름</button>`).join("");
     const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
-    box.innerHTML = boolHtml + "<br>" + numHtml;
+    box.innerHTML = boolHtml + "<br>" + pulseHtml + "<br>" + numHtml;
     bindInject(box);
   }
   refreshInject(document, inj);
@@ -545,11 +565,12 @@ function renderSim(s) {
   }
   rows("sim_tbl", [
     ["sim time", n.time + " s"],
-    ["front / side / slide", `${n.front_pos} / ${n.side_pos} / ${n.slide_pos}`],
+    ["cover / slide", `${n.cover_pos} / ${n.slide_pos}`],
     ["active", active],
     ["safe_hold / fault", `${n.safe_hold} / ${n.fault}`],
     ["hb_timeout / hb_age", `${n.hb_timeout} / ${n.hb_age}s`],
     ["chg_on / bms_pwr", `${n.chg_on} / ${n.bms_pwr}`],
+    ["maint", `${n.maint_active} / ${n.maint_source}`],
     ["last_cmd_seq", n.last_cmd_seq],
   ]);
   setText("sim_log", s.log.slice().reverse().join("\n"));
@@ -568,18 +589,8 @@ function sendCommand(button) {
   }
   let arg0 = 0;
   let arg1 = 0;
-  if (CMD_COVER.includes(code)) {
-    arg0 = numberOf("cover_mask");
-  }
   if (code === CMD_CHARGE_ON) {
     arg0 = numberOf("chg_arg");
-  }
-  if (CMD_BMS_WORD.includes(code)) {
-    arg0 = numberOf("bms_addr");
-    arg1 = numberOf("bms_val");
-  }
-  if (code === CMD_MCU_RESET) {
-    arg0 = MCU_RESET_MAGIC;
   }
   if (code === CMD_POWER_CYCLE) {
     arg0 = POWER_CYCLE_MAGIC;
@@ -605,6 +616,13 @@ document.querySelectorAll("#set_tbl select, #set_tbl input[type=number]").forEac
 }));
 document.querySelectorAll("#set_tbl input.bit").forEach(el => el.addEventListener("change", () => writeBits(el.dataset.addr)));
 bindInject(document.querySelector(".station-bar"));
+byId("estop_btn").addEventListener("click", () => {
+  if (simState === null) {
+    return;
+  }
+  postJson(SIM + "/api/inject", { estop: !simState.inject.estop });
+});
+INJECT_PULSES.forEach(k => byId(k).addEventListener("click", () => postJson(SIM + "/api/inject", { [k]: true })));
 getJson("/api/icd").then(info => {
   ICD = info;
   Object.keys(info.holding).forEach(name => {
@@ -614,7 +632,7 @@ getJson("/api/icd").then(info => {
 });
 
 setInterval(() => {
-  getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "dm_master 연결 실패"));
+  getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "sm_master 연결 실패"));
 }, 200);
 setInterval(() => {
   getJson(SIM + "/api/state").then(s => {

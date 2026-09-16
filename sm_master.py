@@ -1,4 +1,4 @@
-"""DM(Dock Manager) 마스터 프로토타입: ICD 폴링 주기로 MCU 를 읽고 명령·설정을 쓴다"""
+"""SM(Station Manager) 마스터 프로토타입: ICD 폴링 주기로 MCU 를 읽고 명령·설정을 쓴다"""
 import collections
 import os
 import queue
@@ -33,7 +33,7 @@ def bits(value, names):
     return [names[i] for i in range(len(names)) if (value >> i) & 1]
 
 
-class Dm:
+class Sm:
     def __init__(self, fd, port):
         self.fd = fd
         self.port = port
@@ -226,7 +226,6 @@ class Dm:
             if addr in icd.SIGNED_INPUTS:
                 value = to_signed(value)
             regs[name] = value
-        regs["UPTIME_s"] = (r[icd.UPTIME_HI] << 16) | r[icd.UPTIME_LO]
         current = (r[icd.BMS_CURRENT_HI] << 16) | r[icd.BMS_CURRENT_LO]
         if current >= 0x80000000:
             current -= 0x100000000
@@ -238,6 +237,8 @@ class Dm:
             "mcu_status": bits(r[icd.MCU_STATUS], icd.MCU_STATUS_BITS),
             "hard_block": bits(r[icd.HARD_BLOCK], icd.HARD_BLOCK_BITS),
             "fault": icd.REASON_NAMES.get(r[icd.FAULT_CODE], hex(r[icd.FAULT_CODE])),
+            "local_btn": bits(r[icd.LOCAL_BTN], icd.LOCAL_BTN_BITS),
+            "maint_source": icd.MAINT_SOURCE_NAMES.get(r[icd.MAINT_SOURCE], r[icd.MAINT_SOURCE]),
             "ack_reason": icd.REASON_NAMES.get(r[icd.ACK_REASON], hex(r[icd.ACK_REASON])),
             "done_result": icd.DONE_RESULT_NAMES.get(r[icd.DONE_RESULT], r[icd.DONE_RESULT]),
             "cover_state": icd.COVER_STATE_NAMES.get(r[icd.COVER_STATE], r[icd.COVER_STATE]),
@@ -270,15 +271,15 @@ def main():
     if len(sys.argv) > 1:
         port = sys.argv[1]
     fd = mb.open_serial(port)
-    dm = Dm(fd, port)
+    sm = Sm(fd, port)
     webapi.serve(kHttpPort, {
-        ("GET", "/api/state"): dm.snapshot,
-        ("GET", "/api/icd"): dm.icd_info,
-        ("POST", "/api/cmd"): dm.send_command,
-        ("POST", "/api/write"): dm.write_setting,
+        ("GET", "/api/state"): sm.snapshot,
+        ("GET", "/api/icd"): sm.icd_info,
+        ("POST", "/api/cmd"): sm.send_command,
+        ("POST", "/api/write"): sm.write_setting,
     }, html_path=kGuiFile)
-    print("dm_master: %s, http :%d" % (port, kHttpPort), flush=True)
-    dm.loop()
+    print("sm_master: %s, http :%d" % (port, kHttpPort), flush=True)
+    sm.loop()
 
 
 if __name__ == "__main__":

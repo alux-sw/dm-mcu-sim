@@ -1,10 +1,11 @@
-"""시리얼 없이 Mcu 클래스에 프레임을 직접 넣어 명령·인터락·하트비트를 점검한다 (python3 test_sim.py)"""
+"""시리얼 없이 Mcu 클래스에 프레임을 직접 넣어 명령·인터락·현장 버튼·하트비트를 점검한다 (python3 test_sim.py)"""
 import icd
 import mcu_sim
 import modbus_rtu as mb
 
 kTicksCover = int(mcu_sim.kCoverMoveSec / mcu_sim.kTickSec) + 2
 kTicksSlide = int(mcu_sim.kSlideMoveSec / mcu_sim.kTickSec) + 2
+kTicksHb = int(mcu_sim.kHbTimeoutSec / mcu_sim.kTickSec) + 2
 
 
 def cmd(mcu, seq, code, a0=0, a1=0):
@@ -34,25 +35,37 @@ assert mb.is_crc_ok(bytes.fromhex("01030000000ac5cd"))
 mcu = mcu_sim.Mcu()
 mcu.on_rx()
 
-# 입력 블록 읽기 응답 길이
+# 입력 블록 읽기 응답 길이, 범위 밖 주소
 resp = mcu.handle(mb.req_read(mb.FC_READ_INPUT, *icd.STATUS_BLOCK))
 assert len(resp) == 5 + 112 * 2 and mb.is_crc_ok(resp)
 resp = mcu.handle(mb.req_read(mb.FC_READ_INPUT, 0x00C0, 1))
 assert resp[1] == 0x84 and resp[2] == mb.EX_ILLEGAL_ADDR
+resp = mcu.handle(mb.req_read(mb.FC_READ_HOLDING, 0x0030, 1))
+assert resp[1] == 0x83 and resp[2] == mb.EX_ILLEGAL_ADDR
 
-# 잘못된 설정값 → 0x03
-resp = mcu.handle(mb.req_write_single(icd.CFG_HB_TIMEOUT, 5))
+# 잘못된 설정값 → 0x03, 되읽기
+resp = mcu.handle(mb.req_write_single(icd.SET_LED_PATTERN, 10))
 assert resp[1] == 0x86 and resp[2] == mb.EX_ILLEGAL_VALUE
 resp = mcu.handle(mb.req_write_single(icd.SET_LIGHT, 3))
 assert resp[1] == mb.FC_WRITE_SINGLE and mcu.inputs[icd.LIGHT_STATE] == 3
 
-# 커버 열기 → 완료
+# 정비 모드: SM 쓰기(원격) / 버튼(토글)
+mcu.handle(mb.req_write_single(icd.SET_MAINT_MODE, 1))
+mcu.tick()
+assert (mcu.inputs[icd.MAINT_ACTIVE], mcu.inputs[icd.MAINT_SOURCE]) == (1, 1)
+mcu.inject["btn_maint"] = True
+ticks(mcu, 1)
+assert (mcu.inputs[icd.MAINT_ACTIVE], mcu.inputs[icd.MAINT_SOURCE]) == (0, 0)
+ticks(mcu, 6)
+assert not mcu.inject["btn_maint"]
+
+# 커버 열기 → 완료 (인자 없음)
 cmd(mcu, 1, icd.COVER_OPEN)
 assert ack(mcu) == (1, 0, icd.OK)
 assert mcu.inputs[icd.COVER_STATE] == 1
 ticks(mcu, kTicksCover)
 assert done(mcu) == (1, 0)
-assert mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.ACTIVE_SEQ] == 0
+assert mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.COVER_LIMITS] == 0b10 and mcu.inputs[icd.ACTIVE_SEQ] == 0
 
 # 같은 seq 재전송은 무시
 cmd(mcu, 1, icd.COVER_CLOSE)
@@ -75,8 +88,10 @@ assert done(mcu) == (5, 0)
 cmd(mcu, 6, icd.CHARGE_ON)
 assert ack(mcu) == (6, 0, icd.OK) and done(mcu) == (6, 3) and mcu.inputs[icd.CHG_STATE] == 2
 
-# 드론 감지 후 충전 ON → 충전 중 슬라이드 전개는 HI-3
+# 드론 감지(하중 센서) 후 충전 ON → 충전 중 슬라이드 전개는 HI-3
 mcu.inject["drone_detected"] = True
+ticks(mcu, 1)
+assert mcu.inputs[icd.SLIDE_LIMITS] & 0b100
 cmd(mcu, 7, icd.CHARGE_ON, 300)
 assert done(mcu) == (7, 0) and mcu.inputs[icd.CHG_STATE] == 1 and mcu.inputs[icd.CHG_CURRENT_LIMIT] == 300
 cmd(mcu, 8, icd.SLIDE_EXTEND)
@@ -97,55 +112,66 @@ assert ack(mcu) == (11, 1, icd.HI6)
 mcu.inject["estop"] = False
 ticks(mcu, 1)
 cmd(mcu, 12, icd.COVER_OPEN)
-assert ack(mcu) == (12, 1, icd.FAULT_LATCHED)
+assert ack(mcu) == (12, 1, icd.FAULT_LATCHED) and mcu.safe_hold
 cmd(mcu, 13, icd.CLEAR_FAULT)
-assert done(mcu) == (13, 0) and mcu.fault_code == 0
-cmd(mcu, 14, icd.COVER_OPEN)
-assert ack(mcu) == (14, 1, icd.SAFE_HOLD)
-cmd(mcu, 15, icd.CLEAR_HOLD)
-assert done(mcu) == (15, 0) and not mcu.safe_hold
+assert done(mcu) == (13, 0) and mcu.fault_code == 0 and not mcu.safe_hold
+
+# MOTION_STOP → SAFE-HOLD 표시, 다음 정상 명령 접수로 자동 해제
+cmd(mcu, 14, icd.COVER_CLOSE)
+ticks(mcu, 3)
+cmd(mcu, 15, icd.MOTION_STOP)
+assert done(mcu) == (15, 0) and mcu.safe_hold and mcu.active is None
 cmd(mcu, 16, icd.COVER_CLOSE)
+assert ack(mcu) == (16, 0, icd.OK) and not mcu.safe_hold
 ticks(mcu, kTicksCover)
 assert done(mcu) == (16, 0) and mcu.inputs[icd.COVER_STATE] == 0
 
 # 모션 제한 시간 초과 → DONE TIMEOUT + FAULT MOTION_TIMEOUT
-mcu.handle(mb.req_write_single(icd.CFG_COVER_TIMEOUT, 10))
+mcu.inject["motion_timeout_sec"] = 1.0
 cmd(mcu, 17, icd.COVER_OPEN)
 ticks(mcu, 12)
 assert done(mcu) == (17, 1) and mcu.fault_code == icd.MOTION_TIMEOUT
+mcu.inject["motion_timeout_sec"] = mcu_sim.kMotionTimeoutSec
 cmd(mcu, 18, icd.CLEAR_FAULT)
 assert done(mcu) == (18, 0)
 
-# BMS 패스스루
-cmd(mcu, 19, icd.BMS_WRITE_WORD, 0x10, 1)
-assert ack(mcu) == (19, 1, icd.BAD_ARG)
-cmd(mcu, 20, icd.BMS_WRITE_WORD, 0x80, 0)
+# 현장 버튼: ACK/DONE 없이 모션, LOCAL_BTN 비트, SM 모션 명령은 BUSY
+mcu.inject["btn_door"] = True
+ticks(mcu, 1)
+assert mcu.inputs[icd.LOCAL_BTN] == 0b01 and mcu.active is not None and mcu.active["seq"] == 0
+assert mcu.inputs[icd.ACTIVE_SEQ] == 0 and mcu.inputs[icd.MCU_STATUS] & (1 << 7)
+cmd(mcu, 19, icd.SLIDE_EXTEND)
+assert ack(mcu) == (19, 1, icd.BUSY)
+ticks(mcu, kTicksCover)
+assert mcu.active is None and mcu.inputs[icd.COVER_STATE] == 2 and done(mcu) == (18, 0)
+assert mcu.inputs[icd.LOCAL_BTN] == 0
+mcu.inject["btn_slide"] = True
+ticks(mcu, kTicksSlide + 1)
+assert mcu.inputs[icd.SLIDE_STATE] == 2
+mcu.inject["btn_slide"] = True
+ticks(mcu, kTicksSlide + 1)
+assert mcu.inputs[icd.SLIDE_STATE] == 0
+
+# BMS 전원, 링크 끊김
+cmd(mcu, 20, icd.BMS_POWER_OFF)
 assert done(mcu) == (20, 0) and mcu.inputs[icd.BMS_PWR_STATE] == 0
-cmd(mcu, 21, icd.BMS_READ_WORD, 0x80)
-assert done(mcu) == (21, 0) and mcu.inputs[icd.DONE_DATA] == 0
 mcu.inject["bms_link"] = False
 ticks(mcu, 1)
-cmd(mcu, 22, icd.BMS_POWER_ON)
-assert ack(mcu) == (22, 1, icd.BMS_NO_LINK) and mcu.inputs[icd.BMS_LINK] == 0
+cmd(mcu, 21, icd.BMS_POWER_ON)
+assert ack(mcu) == (21, 1, icd.BMS_NO_LINK) and mcu.inputs[icd.BMS_LINK] == 0
 mcu.inject["bms_link"] = True
 
 # 매직 불일치·미정의 명령
-cmd(mcu, 23, icd.MCU_RESET, 0x1234)
-assert ack(mcu) == (23, 1, icd.BAD_ARG)
-cmd(mcu, 24, 0x00FF)
-assert ack(mcu) == (24, 1, icd.UNKNOWN_CMD)
+cmd(mcu, 22, icd.STATION_POWER_CYCLE, 0x1234)
+assert ack(mcu) == (22, 1, icd.BAD_ARG)
+cmd(mcu, 23, 0x000E)
+assert ack(mcu) == (23, 1, icd.UNKNOWN_CMD)
 
 # 하트비트 3 초 미수신 → SAFE-HOLD
-for _ in range(31):
+for _ in range(kTicksHb):
     mcu.tick()
 assert mcu.hb_timeout and mcu.safe_hold
 mcu.on_rx()
 assert not mcu.hb_timeout
-
-# MCU 리셋 → ACK_SEQ = DONE_SEQ = 0
-cmd(mcu, 25, icd.MCU_RESET, icd.MCU_RESET_MAGIC)
-assert ack(mcu) == (25, 0, icd.OK)
-ticks(mcu, 6)
-assert mcu.inputs[icd.ACK_SEQ] == 0 and mcu.inputs[icd.DONE_SEQ] == 0 and not mcu.safe_hold
 
 print("test_sim: OK")
