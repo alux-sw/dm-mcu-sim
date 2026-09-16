@@ -5,7 +5,7 @@
 <title>DM ↔ MCU 디버그</title>
 <style>
   body { font-family: system-ui, sans-serif; font-size: 13px; margin: 0; background: #1e1f22; color: #ddd; }
-  header { display: flex; gap: 24px; align-items: center; padding: 8px 14px; background: #2b2d31; border-bottom: 1px solid #444; position: sticky; top: 0; }
+  header { display: flex; gap: 24px; align-items: center; padding: 8px 14px; background: #2b2d31; border-bottom: 1px solid #444; position: sticky; top: 0; z-index: 1; }
   header b { font-size: 15px; }
   main { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; padding: 10px; }
   section { background: #2b2d31; border: 1px solid #444; border-radius: 6px; padding: 8px 10px; }
@@ -25,6 +25,37 @@
   pre { margin: 0; font-size: 11px; max-height: 220px; overflow: auto; background: #1a1b1e; padding: 4px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
   .err { color: #f66; }
+  .station-bar { display: flex; gap: 18px; align-items: center; margin-bottom: 4px; }
+  svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; background: #17181b; border-radius: 6px; }
+  svg text { font-family: system-ui, sans-serif; fill: #ccc; font-size: 12px; }
+  #cover_front, #cover_side, #platform { transition: transform .2s linear; }
+  .moving { stroke: #ffb300; stroke-width: 2; }
+  .hide { display: none; }
+  .led.p0 { fill: #333; }
+  .led.p1 { fill: #2e7d32; }
+  .led.p2 { fill: #ffb300; animation: blink .6s infinite; }
+  .led.p3 { fill: #1e88e5; }
+  .led.p4 { fill: #00acc1; animation: blink 1s infinite; }
+  .led.p5 { fill: #ef6c00; animation: blink .5s infinite; }
+  .led.p6 { fill: #d32f2f; animation: blink .25s infinite; }
+  .led.p7 { fill: #8e24aa; }
+  .led.p8 { fill: #43a047; animation: breathe 2s infinite; }
+  .led.p9 { fill: #eee; animation: blink .3s infinite; }
+  .lamp { fill: #444; }
+  .lamp.on { fill: #fff59d; filter: drop-shadow(0 0 6px #fff59d); }
+  .interior { fill: #24262b; }
+  .interior.lit { fill: #3a3b2c; }
+  .pad { fill: #777; }
+  .pad.on { fill: #ffd54f; animation: blink .5s infinite; }
+  .dim { opacity: .2; }
+  .blink { animation: blink .5s infinite; }
+  .spin { animation: spin 1s linear infinite; transform-origin: center; transform-box: fill-box; }
+  #estop_btn { fill: #7f1d1d; }
+  #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
+  #banner { font-size: 26px; font-weight: bold; }
+  @keyframes blink { 50% { opacity: .15; } }
+  @keyframes breathe { 50% { opacity: .3; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -34,6 +65,61 @@
   <span id="linkerr" class="err"></span>
 </header>
 <main>
+  <section class="wide">
+    <div class="station-bar">
+      <h2 style="margin:0">스테이션</h2>
+      <span>커버 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="cover_sec"></span>
+      <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
+      <span id="status_line"></span>
+    </div>
+    <svg viewBox="0 0 900 330">
+      <text id="banner" x="450" y="52" text-anchor="middle"></text>
+      <text id="env_text" x="885" y="30" text-anchor="end"></text>
+      <text x="279" y="98" text-anchor="middle">정면 도어</text>
+      <text x="533" y="98" text-anchor="middle">측면 도어</text>
+      <line x1="0" y1="300" x2="900" y2="300" stroke="#555"/>
+      <rect id="interior" class="interior" x="152" y="130" width="508" height="160"/>
+      <rect id="flood" class="hide" x="152" y="278" width="508" height="12" fill="#1e88e5" opacity=".6"/>
+      <rect x="140" y="290" width="520" height="10" fill="#555"/>
+      <rect x="140" y="130" width="12" height="170" fill="#666"/>
+      <rect x="140" y="118" width="520" height="12" fill="#444"/>
+      <rect id="cover_front" x="152" y="104" width="254" height="14" fill="#8a8f99"/>
+      <rect id="cover_side" x="406" y="104" width="254" height="14" fill="#8a8f99"/>
+      <line x1="300" y1="232" x2="880" y2="232" stroke="#777" stroke-dasharray="6 4"/>
+      <text x="700" y="248" fill="#888">슬라이드 레일</text>
+      <g id="platform">
+        <rect id="platform_rect" x="300" y="222" width="200" height="12" fill="#9aa4ad"/>
+        <rect id="pad1" class="pad" x="370" y="216" width="18" height="6"/>
+        <rect id="pad2" class="pad" x="412" y="216" width="18" height="6"/>
+        <g id="drone" class="hide">
+          <line x1="352" y1="203" x2="448" y2="203" stroke="#aaa" stroke-width="3"/>
+          <ellipse cx="352" cy="199" rx="20" ry="4" fill="#999"/>
+          <ellipse cx="448" cy="199" rx="20" ry="4" fill="#999"/>
+          <rect x="380" y="194" width="40" height="20" rx="5" fill="#cfd8dc"/>
+          <rect x="386" y="214" width="6" height="4" fill="#555"/>
+          <rect x="408" y="214" width="6" height="4" fill="#555"/>
+        </g>
+        <text id="bolt" class="hide" x="400" y="262" text-anchor="middle" font-size="18">⚡</text>
+        <text id="chg_text" x="400" y="280" text-anchor="middle"></text>
+      </g>
+      <rect id="led" class="led p0" x="126" y="140" width="8" height="150" rx="4"/>
+      <text x="130" y="134" text-anchor="middle" font-size="10">LED</text>
+      <circle id="lamp_out" class="lamp" cx="118" cy="110" r="8"/>
+      <text x="118" y="95" text-anchor="middle" font-size="10">외부등</text>
+      <circle id="lamp_in" class="lamp" cx="400" cy="142" r="6"/>
+      <text x="400" y="158" text-anchor="middle" font-size="10">내부등</text>
+      <text id="buzzer" class="dim" x="172" y="160" font-size="16">🔔</text>
+      <circle id="indicator" cx="205" cy="153" r="5" fill="#444"/>
+      <text x="190" y="176" text-anchor="middle" font-size="10">알람</text>
+      <text id="heater" class="dim" x="560" y="160" font-size="16">🔥</text>
+      <text id="cooler" class="dim" x="590" y="160" font-size="16">❄️</text>
+      <text id="fan" class="dim" x="620" y="160" font-size="16">🌀</text>
+      <text x="595" y="176" text-anchor="middle" font-size="10">공조</text>
+      <circle id="estop_btn" cx="60" cy="250" r="16"/>
+      <text x="60" y="285" text-anchor="middle" font-size="10">E-STOP</text>
+      <text id="hb_text" x="15" y="30"></text>
+    </svg>
+  </section>
   <section>
     <h2>MCU 상태</h2>
     <div id="mcu_status"></div>
@@ -59,15 +145,15 @@
   <section>
     <h2>설정 (보유 레지스터 쓰기) / 되읽기</h2>
     <table id="set_tbl">
-      <tr><td>공조 모드</td><td><select data-addr="32"><option value="0">off</option><option value="1">auto</option></select></td><td id="rb_climate"></td></tr>
-      <tr><td>조명</td><td><label><input type="checkbox" class="bit" data-addr="33" data-bit="0"> 내부</label> <label><input type="checkbox" class="bit" data-addr="33" data-bit="1"> 외부</label></td><td id="rb_light"></td></tr>
-      <tr><td>알람 출력</td><td><label><input type="checkbox" class="bit" data-addr="34" data-bit="0"> 부저</label> <label><input type="checkbox" class="bit" data-addr="34" data-bit="1"> LED</label></td><td id="rb_alarm"></td></tr>
-      <tr><td>LED 패턴</td><td><select data-addr="35" id="led_sel"></select></td><td id="rb_led"></td></tr>
-      <tr><td>충전 전류 상한 (10mA)</td><td><input type="number" data-addr="36" value="0"></td><td id="rb_chglim"></td></tr>
-      <tr><td>커버 제한 (100ms)</td><td><input type="number" data-addr="48" value="300"></td><td></td></tr>
-      <tr><td>슬라이드 제한 (100ms)</td><td><input type="number" data-addr="49" value="300"></td><td></td></tr>
-      <tr><td>접점 온도 상한 (x10)</td><td><input type="number" data-addr="50" value="600"></td><td></td></tr>
-      <tr><td>HB 타임아웃 (100ms)</td><td><input type="number" data-addr="51" value="30"></td><td></td></tr>
+      <tr data-reg="SET_CLIMATE_MODE"><td>공조 모드</td><td><select data-addr="32"><option value="0">off</option><option value="1">auto</option></select></td><td id="rb_climate" data-reg="CLIMATE_MODE"></td></tr>
+      <tr data-reg="SET_LIGHT"><td>조명</td><td><label><input type="checkbox" class="bit" data-addr="33" data-bit="0"> 내부</label> <label><input type="checkbox" class="bit" data-addr="33" data-bit="1"> 외부</label></td><td id="rb_light" data-reg="LIGHT_STATE"></td></tr>
+      <tr data-reg="SET_ALARM_OUT"><td>알람 출력</td><td><label><input type="checkbox" class="bit" data-addr="34" data-bit="0"> 부저</label> <label><input type="checkbox" class="bit" data-addr="34" data-bit="1"> LED</label></td><td id="rb_alarm" data-reg="ALARM_OUT_STATE"></td></tr>
+      <tr data-reg="SET_LED_PATTERN"><td>LED 패턴</td><td><select data-addr="35" id="led_sel"></select></td><td id="rb_led" data-reg="LED_PATTERN"></td></tr>
+      <tr data-reg="SET_CHG_CURRENT_LIMIT_10mA"><td>충전 전류 상한 (10mA)</td><td><input type="number" data-addr="36" value="0"></td><td id="rb_chglim" data-reg="CHG_CURRENT_LIMIT_10mA"></td></tr>
+      <tr data-reg="CFG_COVER_TIMEOUT_100ms"><td>커버 제한 (100ms)</td><td><input type="number" data-addr="48" value="300"></td><td></td></tr>
+      <tr data-reg="CFG_SLIDE_TIMEOUT_100ms"><td>슬라이드 제한 (100ms)</td><td><input type="number" data-addr="49" value="300"></td><td></td></tr>
+      <tr data-reg="CFG_CONTACT_TEMP_MAX_x10"><td>접점 온도 상한 (x10)</td><td><input type="number" data-addr="50" value="600"></td><td></td></tr>
+      <tr data-reg="CFG_HB_TIMEOUT_100ms"><td>HB 타임아웃 (100ms)</td><td><input type="number" data-addr="51" value="30"></td><td></td></tr>
     </table>
   </section>
   <section>
@@ -133,6 +219,9 @@ const CMD_MCU_RESET = 14;
 const CMD_POWER_CYCLE = 15;
 const MCU_RESET_MAGIC = 0x5A5A;
 const POWER_CYCLE_MAGIC = 0xA5A5;
+const COVER_FRONT_TRAVEL = -250;
+const COVER_SIDE_TRAVEL = 240;
+const SLIDE_TRAVEL = 330;
 
 async function getJson(url) {
   const r = await fetch(url);
@@ -144,16 +233,104 @@ async function postJson(url, body) {
   return r.json();
 }
 
+function byId(id) {
+  return document.getElementById(id);
+}
+
 function setText(id, text) {
-  document.getElementById(id).textContent = text;
+  byId(id).textContent = text;
 }
 
 function setHtml(id, html) {
-  document.getElementById(id).innerHTML = html;
+  byId(id).innerHTML = html;
+}
+
+function setClass(id, cls, on) {
+  byId(id).classList.toggle(cls, on);
+}
+
+let ICD = null;
+const DERIVED_REGS = {
+  BMS_CURRENT_mA: ["BMS_CURRENT_mA_HI", "BMS_CURRENT_mA_LO"],
+  BMS_FAULT_FLAGS: ["BMS_FAULT_FLAGS_HI", "BMS_FAULT_FLAGS_LO"],
+  BMS_PF_STATUS: ["BMS_PF_STATUS_HI", "BMS_PF_STATUS_LO"],
+  BMS_SAFETY_STATUS: ["BMS_SAFETY_STATUS_HI", "BMS_SAFETY_STATUS_LO"],
+};
+
+function escapeAttr(text) {
+  return text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function regLine(name) {
+  let entry = ICD.inputs[name];
+  if (entry === undefined) {
+    entry = ICD.holding[name];
+  }
+  if (entry === undefined) {
+    return name;
+  }
+  return `${name} (0x${entry[0].toString(16).toUpperCase().padStart(4, "0")}): ${entry[1]}`;
+}
+
+function tip(regs, extra) {
+  if (ICD === null || regs === undefined) {
+    return "";
+  }
+  let names = regs;
+  const is_single = typeof regs === "string";
+  if (is_single) {
+    names = DERIVED_REGS[regs] || [regs];
+  }
+  let text = names.map(regLine).join("\n");
+  if (extra) {
+    text += "\n" + extra;
+  }
+  return text;
+}
+
+function reasonTip(name) {
+  if (ICD === null || ICD.reasons[name] === undefined) {
+    return "";
+  }
+  return `${name}: ${ICD.reasons[name]}`;
 }
 
 function rows(id, pairs) {
-  setHtml(id, pairs.map(p => `<tr><td>${p[0]}</td><td>${p[1]}</td></tr>`).join(""));
+  setHtml(id, pairs.map(p => `<tr title="${escapeAttr(tip(p[2], p[3]))}"><td>${p[0]}</td><td>${p[1]}</td></tr>`).join(""));
+}
+
+let HOLDING_BY_ADDR = {};
+
+function refreshSettings(holding) {
+  document.querySelectorAll("#set_tbl [data-addr]").forEach(el => {
+    const is_editing = el === document.activeElement;
+    if (is_editing) {
+      return;
+    }
+    const name = HOLDING_BY_ADDR[el.dataset.addr];
+    if (name === undefined) {
+      return;
+    }
+    const value = holding[name];
+    const is_bit = el.classList.contains("bit");
+    if (is_bit) {
+      el.checked = ((value >> parseInt(el.dataset.bit)) & 1) === 1;
+    } else {
+      el.value = value;
+    }
+  });
+}
+
+function applyStaticTitles() {
+  byId("mcu_status").title = tip("MCU_STATUS");
+  byId("hard_block").title = tip("HARD_BLOCK");
+  document.querySelectorAll("[data-reg]").forEach(el => { el.title = tip(el.dataset.reg); });
+  document.querySelectorAll("button[data-code]").forEach(b => {
+    const entry = ICD.cmds[b.dataset.code];
+    if (entry !== undefined) {
+      b.title = `0x${parseInt(b.dataset.code).toString(16).toUpperCase().padStart(4, "0")} ${entry[0]}: ${entry[1]}`;
+    }
+  });
 }
 
 function chips(list, all, badSet) {
@@ -204,42 +381,47 @@ function renderMaster(s) {
   setText("linkerr", linkErr);
   setHtml("mcu_status", chips(d.mcu_status, MCU_STATUS_BITS, MCU_STATUS_BAD));
   setHtml("hard_block", chips(d.hard_block, HI_BITS, HI_BITS));
-  rows("mcu_tbl", [["FAULT_CODE", d.fault], ["MCU_TICK", r.MCU_TICK], ["FW", d.fw], ["UPTIME", r.UPTIME_s + " s"]]);
+  rows("mcu_tbl", [
+    ["FAULT_CODE", d.fault, "FAULT_CODE", reasonTip(d.fault)],
+    ["MCU_TICK", r.MCU_TICK, "MCU_TICK"],
+    ["FW", d.fw, ["FW_VER_MAJ_MIN", "FW_VER_PATCH"]],
+    ["UPTIME", r.UPTIME_s + " s", ["UPTIME_HI", "UPTIME_LO"]],
+  ]);
   let ackText = "접수";
   if (r.ACK_RESULT !== 0) {
     ackText = "거부";
   }
   rows("fb_tbl", [
-    ["ACK", `seq ${r.ACK_SEQ} / ${ackText} / ${d.ack_reason}`],
-    ["DONE", `seq ${r.DONE_SEQ} / ${d.done_result} / data ${r.DONE_DATA}`],
-    ["ACTIVE", `seq ${r.ACTIVE_SEQ} / ${r.PROGRESS_PCT}%`],
+    ["ACK", `seq ${r.ACK_SEQ} / ${ackText} / ${d.ack_reason}`, ["ACK_SEQ", "ACK_RESULT", "ACK_REASON"], reasonTip(d.ack_reason)],
+    ["DONE", `seq ${r.DONE_SEQ} / ${d.done_result} / data ${r.DONE_DATA}`, ["DONE_SEQ", "DONE_RESULT", "DONE_DATA"]],
+    ["ACTIVE", `seq ${r.ACTIVE_SEQ} / ${r.PROGRESS_PCT}%`, ["ACTIVE_SEQ", "PROGRESS_PCT"]],
   ]);
   rows("motion_tbl", [
-    ["COVER_STATE", d.cover_state],
-    ["COVER_LIMITS", chips(d.cover_limits, ["front_closed", "front_open", "side_closed", "side_open", "front_door", "side_door"])],
-    ["COVER_CURRENT", r.COVER_CURRENT_mA + " mA"],
-    ["SLIDE_STATE", d.slide_state],
-    ["SLIDE_LIMITS", chips(d.slide_limits, ["home", "extended"])],
-    ["SLIDE_CURRENT", r.SLIDE_CURRENT_mA + " mA"],
-    ["SLIDE_ENCODER", r.SLIDE_ENCODER],
+    ["COVER_STATE", d.cover_state, "COVER_STATE"],
+    ["COVER_LIMITS", chips(d.cover_limits, ["front_closed", "front_open", "side_closed", "side_open", "front_door", "side_door"]), "COVER_LIMITS"],
+    ["COVER_CURRENT", r.COVER_CURRENT_mA + " mA", "COVER_CURRENT_mA"],
+    ["SLIDE_STATE", d.slide_state, "SLIDE_STATE"],
+    ["SLIDE_LIMITS", chips(d.slide_limits, ["home", "extended"]), "SLIDE_LIMITS"],
+    ["SLIDE_CURRENT", r.SLIDE_CURRENT_mA + " mA", "SLIDE_CURRENT_mA"],
+    ["SLIDE_ENCODER", r.SLIDE_ENCODER, "SLIDE_ENCODER"],
   ]);
   rows("chg_tbl", [
-    ["CHG_STATE", d.chg_state],
-    ["OUTPUT_ON", r.CHG_OUTPUT_ON],
-    ["전압 / 전류", `${(r.CHG_VOLTAGE_10mV / 100).toFixed(2)} V / ${(r.CHG_CURRENT_10mA / 100).toFixed(2)} A`],
-    ["전류 상한", `${(r.CHG_CURRENT_LIMIT_10mA / 100).toFixed(2)} A`],
-    ["접점 온도", `${(r.CONTACT_TEMP_x10 / 10).toFixed(1)} ℃`],
-    ["CHG_FAULT", d.chg_fault],
+    ["CHG_STATE", d.chg_state, "CHG_STATE"],
+    ["OUTPUT_ON", r.CHG_OUTPUT_ON, "CHG_OUTPUT_ON"],
+    ["전압 / 전류", `${(r.CHG_VOLTAGE_10mV / 100).toFixed(2)} V / ${(r.CHG_CURRENT_10mA / 100).toFixed(2)} A`, ["CHG_VOLTAGE_10mV", "CHG_CURRENT_10mA"]],
+    ["전류 상한", `${(r.CHG_CURRENT_LIMIT_10mA / 100).toFixed(2)} A`, "CHG_CURRENT_LIMIT_10mA"],
+    ["접점 온도", `${(r.CONTACT_TEMP_x10 / 10).toFixed(1)} ℃`, "CONTACT_TEMP_x10"],
+    ["CHG_FAULT", d.chg_fault, "CHG_FAULT_CODE"],
   ]);
   rows("env_tbl", [
-    ["내부 온습도", `${(r.TEMP_IN_x10 / 10).toFixed(1)} ℃ / ${(r.HUM_IN_x10 / 10).toFixed(1)} %`],
-    ["FLOOD", r.FLOOD],
-    ["ENV_STALE", chips(d.env_stale, ["temp_hum", "flood"])],
-    ["PWR_FLAGS", chips(d.pwr_flags, ["ac_ok", "ups_on_battery", "ups_charging"])],
-    ["UPS", `${(r.UPS_VOLTAGE_10mV / 100).toFixed(2)} V / ${r.UPS_SOC_PCT} %`],
-    ["24V 버스", `${(r.BUS24_10mV / 100).toFixed(2)} V / ${(r.BUS24_10mA / 100).toFixed(2)} A`],
-    ["48V 버스", `${(r.BUS48_10mV / 100).toFixed(2)} V / ${(r.BUS48_10mA / 100).toFixed(2)} A`],
-    ["공조 출력", chips(d.climate_out, ["heater", "cooler", "fan"])],
+    ["내부 온습도", `${(r.TEMP_IN_x10 / 10).toFixed(1)} ℃ / ${(r.HUM_IN_x10 / 10).toFixed(1)} %`, ["TEMP_IN_x10", "HUM_IN_x10"]],
+    ["FLOOD", r.FLOOD, "FLOOD"],
+    ["ENV_STALE", chips(d.env_stale, ["temp_hum", "flood"]), "ENV_STALE"],
+    ["PWR_FLAGS", chips(d.pwr_flags, ["ac_ok", "ups_on_battery", "ups_charging"]), "PWR_FLAGS"],
+    ["UPS", `${(r.UPS_VOLTAGE_10mV / 100).toFixed(2)} V / ${r.UPS_SOC_PCT} %`, ["UPS_VOLTAGE_10mV", "UPS_SOC_PCT"]],
+    ["24V 버스", `${(r.BUS24_10mV / 100).toFixed(2)} V / ${(r.BUS24_10mA / 100).toFixed(2)} A`, ["BUS24_10mV", "BUS24_10mA"]],
+    ["48V 버스", `${(r.BUS48_10mV / 100).toFixed(2)} V / ${(r.BUS48_10mA / 100).toFixed(2)} A`, ["BUS48_10mV", "BUS48_10mA"]],
+    ["공조 출력", chips(d.climate_out, ["heater", "cooler", "fan"]), "CLIMATE_OUT"],
   ]);
   setText("rb_climate", "되읽기 " + r.CLIMATE_MODE);
   setHtml("rb_light", chips(d.light, ["inner", "outer"]));
@@ -247,16 +429,81 @@ function renderMaster(s) {
   setText("rb_led", "되읽기 " + d.led_pattern);
   setText("rb_chglim", "적용 " + r.CHG_CURRENT_LIMIT_10mA);
   const bmsKeys = Object.keys(r).filter(k => k.startsWith("BMS_") && !/_(HI|LO)$/.test(k));
-  setHtml("bms_tbl", bmsKeys.map(k => `<div><span style="color:#aaa">${k.slice(4)}</span> ${r[k]}</div>`).join(""));
+  setHtml("bms_tbl", bmsKeys.map(k => `<div title="${escapeAttr(tip(k))}"><span style="color:#aaa">${k.slice(4)}</span> ${r[k]}</div>`).join(""));
   setText("cmd_log", s.cmds.map(fmtCmd).join("\n"));
   setText("frames", s.frames.slice().reverse().map(f => `${fmtTime(f[0])} ${f[1]} ${f[2].replace(/(..)/g, "$1 ")}`).join("\n"));
+  refreshSettings(s.holding);
 }
 
-function buildInjectPanel(box) {
-  const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
-  const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
-  box.innerHTML = boolHtml + "<br>" + numHtml;
-  box.querySelectorAll("input").forEach(el => el.addEventListener("change", () => {
+function renderStation(s) {
+  const n = s.internal;
+  const inj = s.inject;
+  const is_cover_motion = n.active !== null && n.active.name.startsWith("COVER");
+  const is_slide_motion = n.active !== null && n.active.name.startsWith("SLIDE");
+  byId("cover_front").style.transform = `translateX(${COVER_FRONT_TRAVEL * n.front_pos}px)`;
+  byId("cover_side").style.transform = `translateX(${COVER_SIDE_TRAVEL * n.side_pos}px)`;
+  byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
+  setClass("cover_front", "moving", is_cover_motion);
+  setClass("cover_side", "moving", is_cover_motion);
+  setClass("platform_rect", "moving", is_slide_motion);
+  setClass("drone", "hide", !inj.drone_detected);
+  setClass("pad1", "on", n.chg_on);
+  setClass("pad2", "on", n.chg_on);
+  setClass("bolt", "hide", !n.chg_on);
+  let chgText = "충전 " + n.chg_state;
+  if (n.chg_on) {
+    chgText += ` ${n.chg_volt.toFixed(2)} V / ${n.chg_amp.toFixed(2)} A`;
+  }
+  if (n.chg_fault !== "none") {
+    chgText += " (" + n.chg_fault + ")";
+  }
+  setText("chg_text", chgText);
+  byId("led").setAttribute("class", "led p" + n.led_pattern);
+  setClass("lamp_in", "on", (n.light & 1) !== 0);
+  setClass("lamp_out", "on", (n.light & 2) !== 0);
+  setClass("interior", "lit", (n.light & 1) !== 0);
+  const is_buzzer = (n.alarm & 1) !== 0;
+  setClass("buzzer", "dim", !is_buzzer);
+  setClass("buzzer", "blink", is_buzzer);
+  const is_indicator = (n.alarm & 2) !== 0;
+  let indicatorFill = "#444";
+  if (is_indicator) {
+    indicatorFill = "#ff5252";
+  }
+  byId("indicator").setAttribute("fill", indicatorFill);
+  setClass("indicator", "blink", is_indicator);
+  setClass("heater", "dim", (n.climate_out & 1) === 0);
+  setClass("cooler", "dim", (n.climate_out & 2) === 0);
+  setClass("fan", "dim", (n.climate_out & 4) === 0);
+  setClass("fan", "spin", (n.climate_out & 4) !== 0);
+  setClass("estop_btn", "on", inj.estop);
+  setClass("flood", "hide", !inj.flood);
+  setText("env_text", `내부 ${inj.temp_in.toFixed(1)} ℃ / ${inj.hum_in.toFixed(0)} %   접점 ${inj.contact_temp.toFixed(1)} ℃`);
+  let hbText = "HB age " + n.hb_age + " s";
+  if (n.hb_timeout) {
+    hbText += "  (타임아웃)";
+  }
+  setText("hb_text", hbText);
+  let banner = "";
+  let bannerColor = "#ef6c00";
+  if (n.safe_hold) {
+    banner = "SAFE-HOLD";
+  }
+  if (n.fault !== "OK") {
+    banner = "FAULT " + n.fault;
+    bannerColor = "#d32f2f";
+  }
+  setText("banner", banner);
+  byId("banner").setAttribute("fill", bannerColor);
+  let status = `커버 ${n.cover_state} · 슬라이드 ${n.slide_state} · LED ${LED_NAMES[n.led_pattern]}`;
+  if (n.active !== null) {
+    status += ` · ${n.active.name} ${n.progress}%`;
+  }
+  setText("status_line", status);
+}
+
+function bindInject(root) {
+  root.querySelectorAll("input[data-key]").forEach(el => el.addEventListener("change", () => {
     let value = parseFloat(el.value);
     const is_checkbox = el.type === "checkbox";
     if (is_checkbox) {
@@ -266,14 +513,8 @@ function buildInjectPanel(box) {
   }));
 }
 
-function renderSim(s) {
-  const inj = s.inject;
-  const n = s.internal;
-  const box = document.getElementById("inject");
-  if (box.children.length === 0) {
-    buildInjectPanel(box);
-  }
-  box.querySelectorAll("input").forEach(el => {
+function refreshInject(root, inj) {
+  root.querySelectorAll("input[data-key]").forEach(el => {
     const is_editing = el === document.activeElement;
     if (is_editing) {
       return;
@@ -285,6 +526,19 @@ function renderSim(s) {
       el.value = inj[el.dataset.key];
     }
   });
+}
+
+function renderSim(s) {
+  const inj = s.inject;
+  const n = s.internal;
+  const box = byId("inject");
+  if (box.children.length === 0) {
+    const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
+    const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
+    box.innerHTML = boolHtml + "<br>" + numHtml;
+    bindInject(box);
+  }
+  refreshInject(document, inj);
   let active = "-";
   if (n.active) {
     active = `#${n.active.seq} ${n.active.name}`;
@@ -299,10 +553,11 @@ function renderSim(s) {
     ["last_cmd_seq", n.last_cmd_seq],
   ]);
   setText("sim_log", s.log.slice().reverse().join("\n"));
+  renderStation(s);
 }
 
 function numberOf(id) {
-  return parseInt(document.getElementById(id).value);
+  return parseInt(byId(id).value);
 }
 
 function sendCommand(button) {
@@ -344,11 +599,19 @@ function writeBits(addr) {
 }
 
 document.querySelectorAll("button[data-code]").forEach(b => b.addEventListener("click", () => sendCommand(b)));
-document.getElementById("led_sel").innerHTML = LED_NAMES.map((name, i) => `<option value="${i}">${i} ${name}</option>`).join("");
+byId("led_sel").innerHTML = LED_NAMES.map((name, i) => `<option value="${i}">${i} ${name}</option>`).join("");
 document.querySelectorAll("#set_tbl select, #set_tbl input[type=number]").forEach(el => el.addEventListener("change", () => {
   postJson("/api/write", { addr: parseInt(el.dataset.addr), value: parseInt(el.value) });
 }));
 document.querySelectorAll("#set_tbl input.bit").forEach(el => el.addEventListener("change", () => writeBits(el.dataset.addr)));
+bindInject(document.querySelector(".station-bar"));
+getJson("/api/icd").then(info => {
+  ICD = info;
+  Object.keys(info.holding).forEach(name => {
+    HOLDING_BY_ADDR[info.holding[name][0]] = name;
+  });
+  applyStaticTitles();
+});
 
 setInterval(() => {
   getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "dm_master 연결 실패"));
@@ -358,7 +621,7 @@ setInterval(() => {
     renderSim(s);
     setText("sim_err", "");
   }).catch(() => setText("sim_err", "(mcu_sim :8881 없음)"));
-}, 500);
+}, 200);
 </script>
 </body>
 </html>

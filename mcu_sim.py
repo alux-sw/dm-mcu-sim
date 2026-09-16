@@ -32,6 +32,7 @@ kInjectDefaults = {
     "estop": False, "ac_ok": True, "flood": False, "drone_detected": False, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
+    "cover_sec": kCoverMoveSec, "slide_sec": kSlideMoveSec,
 }
 
 
@@ -383,7 +384,7 @@ class Mcu:
             target = 0.0
             if code == icd.COVER_OPEN:
                 target = 1.0
-            step = kTickSec / kCoverMoveSec
+            step = kTickSec / max(self.inject["cover_sec"], kTickSec)
             is_front = (a["mask"] == 0) or (a["mask"] & 1) != 0
             is_side = (a["mask"] == 0) or (a["mask"] & 2) != 0
             moved = []
@@ -399,7 +400,7 @@ class Mcu:
             target = 0.0
             if code == icd.SLIDE_EXTEND:
                 target = 1.0
-            self.slide_pos = approach(self.slide_pos, target, kTickSec / kSlideMoveSec)
+            self.slide_pos = approach(self.slide_pos, target, kTickSec / max(self.inject["slide_sec"], kTickSec))
             is_done = self.slide_pos == target
             progress = abs(self.slide_pos - (1.0 - target))
         self.inputs[icd.PROGRESS_PCT] = int(progress * 100)
@@ -644,6 +645,17 @@ class Mcu:
                     "chg_on": self.chg_on,
                     "bms_pwr": self.bms_pwr,
                     "last_cmd_seq": self.last_cmd_seq,
+                    "progress": self.inputs[icd.PROGRESS_PCT],
+                    "cover_state": icd.COVER_STATE_NAMES[self.inputs[icd.COVER_STATE]],
+                    "slide_state": icd.SLIDE_STATE_NAMES[self.inputs[icd.SLIDE_STATE]],
+                    "chg_state": icd.CHG_STATE_NAMES[self.inputs[icd.CHG_STATE]],
+                    "chg_fault": icd.CHG_FAULT_NAMES[self.chg_fault],
+                    "chg_volt": self.inputs[icd.CHG_VOLTAGE] / 100,
+                    "chg_amp": self.inputs[icd.CHG_CURRENT] / 100,
+                    "led_pattern": self.holding[icd.SET_LED_PATTERN],
+                    "light": self.holding[icd.SET_LIGHT],
+                    "alarm": self.holding[icd.SET_ALARM_OUT],
+                    "climate_out": self.inputs[icd.CLIMATE_OUT],
                 },
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
                 "log": list(self.log),

@@ -6,7 +6,7 @@ ICD-XS-DM-MCU v0.1 (Dock Manager ↔ 스테이션 MCU, Modbus RTU) 프로토타�
 |---|---|
 | `dm_master.py` | DM(SM) 쪽 Modbus 마스터. 상태 10 Hz·BMS 1/0.2 Hz·식별 1회·하트비트 1 Hz 폴링, 명령·설정 쓰기, HTTP :8880 |
 | `mcu_sim.py` | MCU 쪽 Modbus 슬레이브 시뮬레이터. 레지스터 맵·명령 접수/거부·HI-1~6·SAFE-HOLD/FAULT·하트비트·BMS 미러, HTTP :8881 |
-| `gui.html` | 디버그 GUI. dm_master 가 `/` 로 내보냄 |
+| `gui.html` | 디버그 GUI. 스테이션 애니메이션(커버·슬라이드·드론·충전·LED·조명·알람·공조·E-Stop·침수), 레지스터 표, 명령·설정·주입. 값에 마우스를 올리면 ICD 설명 툴팁. dm_master 가 `/` 로 내보냄 |
 | `icd.py` | 레지스터 주소·명령·거부 코드 정의 |
 | `modbus_rtu.py` | CRC16·프레임 조립/해석·시리얼(termios) |
 | `webapi.py` | JSON HTTP 서버 |
@@ -43,14 +43,15 @@ python3 test_sim.py
 
 dm_master (:8880)
 
-- `GET /api/state` — 입력 레지스터 전부(이름별)·해석값·링크 통계·명령 로그·프레임 로그
+- `GET /api/state` — 입력 레지스터 전부(이름별)·해석값·링크 통계·명령 로그·프레임 로그·마지막 보유 레지스터 값(시작 시 0x03 으로 한 번 읽음)
+- `GET /api/icd` — 레지스터·명령·거부 코드 설명 (툴팁용)
 - `POST /api/cmd` `{"code":1,"arg0":0,"arg1":0}` — CMD_SEQ 자동 증가, 0x10 한 프레임으로 씀
 - `POST /api/write` `{"addr":33,"value":3}` — 보유 레지스터 0x06 쓰기
 
 mcu_sim (:8881)
 
-- `GET /api/state` — 주입값·내부 상태·로그
-- `POST /api/inject` `{"estop":true,"contact_temp":65}` — estop / ac_ok / flood / drone_detected / bms_link / overcurrent(HI-4) / limit_conflict / mute(응답 끊기) / contact_temp / temp_in / hum_in
+- `GET /api/state` — 주입값·내부 상태(위치·충전·LED 등 애니메이션용)·로그
+- `POST /api/inject` `{"estop":true,"contact_temp":65}` — estop / ac_ok / flood / drone_detected / bms_link / overcurrent(HI-4) / limit_conflict / mute(응답 끊기) / contact_temp / temp_in / hum_in / cover_sec·slide_sec(모션 소요 시간, GUI 상단에서 조절)
 
 ## 시뮬레이터 가정
 

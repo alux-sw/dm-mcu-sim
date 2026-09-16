@@ -96,8 +96,27 @@ class Dm:
                 self.holding[addr + i] = v
         return True
 
+    def read_holding_all(self):
+        """정의된 보유 레지스터를 연속 구간별로 0x03 읽어 holding 에 채운다"""
+        addrs = sorted(icd.HOLDING_NAMES)
+        start = addrs[0]
+        prev = addrs[0]
+        for a in addrs[1:] + [None]:
+            is_contiguous = (a is not None) and (a == prev + 1)
+            if is_contiguous:
+                prev = a
+                continue
+            resp = self.transact(mb.req_read(mb.FC_READ_HOLDING, start, prev - start + 1))
+            if resp is not None:
+                with self.lock:
+                    for i, v in enumerate(mb.parse_read_values(resp)):
+                        self.holding[start + i] = v
+            start = a
+            prev = a
+
     # --- 폴링 루프 ---
     def loop(self):
+        self.read_holding_all()
         now = time.monotonic()
         next_status = now
         next_bms = now
@@ -185,6 +204,15 @@ class Dm:
         self.jobs.put(("write", int(body["addr"]), int(body["value"])))
         return {"ok": True}
 
+    def icd_info(self, body):
+        """툴팁용 ICD 설명: 이름 → [주소, 설명]"""
+        return {
+            "inputs": {name: [addr, icd.INPUT_DESC.get(addr, "")] for addr, name in icd.INPUT_NAMES.items()},
+            "holding": {name: [addr, icd.HOLDING_DESC.get(addr, "")] for addr, name in icd.HOLDING_NAMES.items()},
+            "cmds": {code: [name, icd.CMD_DESC.get(code, "")] for code, name in icd.CMD_NAMES.items()},
+            "reasons": {name: icd.REASON_DESC.get(code, "") for code, name in icd.REASON_NAMES.items()},
+        }
+
     def snapshot(self, body):
         with self.lock:
             r = list(self.regs)
@@ -245,6 +273,7 @@ def main():
     dm = Dm(fd, port)
     webapi.serve(kHttpPort, {
         ("GET", "/api/state"): dm.snapshot,
+        ("GET", "/api/icd"): dm.icd_info,
         ("POST", "/api/cmd"): dm.send_command,
         ("POST", "/api/write"): dm.write_setting,
     }, html_path=kGuiFile)
