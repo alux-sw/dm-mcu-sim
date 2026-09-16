@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>DM ↔ MCU 디버그</title>
+<style>
+  body { font-family: system-ui, sans-serif; font-size: 13px; margin: 0; background: #1e1f22; color: #ddd; }
+  header { display: flex; gap: 24px; align-items: center; padding: 8px 14px; background: #2b2d31; border-bottom: 1px solid #444; position: sticky; top: 0; }
+  header b { font-size: 15px; }
+  main { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; padding: 10px; }
+  section { background: #2b2d31; border: 1px solid #444; border-radius: 6px; padding: 8px 10px; }
+  section.wide { grid-column: 1 / -1; }
+  h2 { font-size: 13px; margin: 0 0 6px; color: #9cf; }
+  table { border-collapse: collapse; width: 100%; }
+  td { padding: 1px 6px; border-bottom: 1px solid #3a3c40; vertical-align: top; }
+  td:first-child { color: #aaa; white-space: nowrap; }
+  .chip { display: inline-block; padding: 1px 6px; margin: 1px; border-radius: 3px; background: #444; color: #888; }
+  .chip.on { background: #2e7d32; color: #fff; }
+  .chip.bad { background: #c62828; color: #fff; }
+  button { margin: 2px; padding: 3px 8px; background: #3b3f46; color: #eee; border: 1px solid #666; border-radius: 4px; cursor: pointer; }
+  button:hover { background: #50555e; }
+  input, select { background: #1e1f22; color: #eee; border: 1px solid #666; border-radius: 3px; padding: 2px 4px; width: 80px; }
+  input[type=checkbox] { width: auto; }
+  label { white-space: nowrap; }
+  pre { margin: 0; font-size: 11px; max-height: 220px; overflow: auto; background: #1a1b1e; padding: 4px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
+  .err { color: #f66; }
+</style>
+</head>
+<body>
+<header>
+  <b>DM ↔ MCU 디버그</b>
+  <span id="link"></span>
+  <span id="linkerr" class="err"></span>
+</header>
+<main>
+  <section>
+    <h2>MCU 상태</h2>
+    <div id="mcu_status"></div>
+    <div>HARD_BLOCK: <span id="hard_block"></span></div>
+    <table id="mcu_tbl"></table>
+  </section>
+  <section>
+    <h2>명령 피드백</h2>
+    <table id="fb_tbl"></table>
+  </section>
+  <section>
+    <h2>커버 / 슬라이드</h2>
+    <table id="motion_tbl"></table>
+  </section>
+  <section>
+    <h2>충전기</h2>
+    <table id="chg_tbl"></table>
+  </section>
+  <section>
+    <h2>환경 / 전원</h2>
+    <table id="env_tbl"></table>
+  </section>
+  <section>
+    <h2>설정 (보유 레지스터 쓰기) / 되읽기</h2>
+    <table id="set_tbl">
+      <tr><td>공조 모드</td><td><select data-addr="32"><option value="0">off</option><option value="1">auto</option></select></td><td id="rb_climate"></td></tr>
+      <tr><td>조명</td><td><label><input type="checkbox" class="bit" data-addr="33" data-bit="0"> 내부</label> <label><input type="checkbox" class="bit" data-addr="33" data-bit="1"> 외부</label></td><td id="rb_light"></td></tr>
+      <tr><td>알람 출력</td><td><label><input type="checkbox" class="bit" data-addr="34" data-bit="0"> 부저</label> <label><input type="checkbox" class="bit" data-addr="34" data-bit="1"> LED</label></td><td id="rb_alarm"></td></tr>
+      <tr><td>LED 패턴</td><td><select data-addr="35" id="led_sel"></select></td><td id="rb_led"></td></tr>
+      <tr><td>충전 전류 상한 (10mA)</td><td><input type="number" data-addr="36" value="0"></td><td id="rb_chglim"></td></tr>
+      <tr><td>커버 제한 (100ms)</td><td><input type="number" data-addr="48" value="300"></td><td></td></tr>
+      <tr><td>슬라이드 제한 (100ms)</td><td><input type="number" data-addr="49" value="300"></td><td></td></tr>
+      <tr><td>접점 온도 상한 (x10)</td><td><input type="number" data-addr="50" value="600"></td><td></td></tr>
+      <tr><td>HB 타임아웃 (100ms)</td><td><input type="number" data-addr="51" value="30"></td><td></td></tr>
+    </table>
+  </section>
+  <section>
+    <h2>BMS 미러</h2>
+    <div id="bms_tbl" class="grid2"></div>
+  </section>
+  <section>
+    <h2>명령 (DM → MCU)</h2>
+    <div>
+      커버 마스크 <select id="cover_mask"><option value="0">전체</option><option value="1">정면</option><option value="2">측면</option></select>
+      <button data-code="1">COVER_OPEN</button><button data-code="2">COVER_CLOSE</button>
+      <button data-code="3">SLIDE_EXTEND</button><button data-code="4">SLIDE_RETRACT</button>
+    </div>
+    <div>
+      충전 상한(10mA, 0=설정값) <input type="number" id="chg_arg" value="0">
+      <button data-code="5">CHARGE_ON</button><button data-code="6">CHARGE_OFF</button>
+      <button data-code="7">BMS_POWER_ON</button><button data-code="8">BMS_POWER_OFF</button>
+    </div>
+    <div>
+      <button data-code="9">MOTION_STOP</button><button data-code="10">CLEAR_HOLD</button><button data-code="11">CLEAR_FAULT</button>
+    </div>
+    <div>
+      BMS 주소 <input type="number" id="bms_addr" value="128"> 값 <input type="number" id="bms_val" value="1">
+      <button data-code="12">BMS_READ_WORD</button><button data-code="13">BMS_WRITE_WORD</button>
+    </div>
+    <div>
+      <button data-code="14">MCU_RESET</button>
+      전원 재투입 지연(초) <input type="number" id="pc_delay" value="3">
+      <button data-code="15">STATION_POWER_CYCLE</button>
+      임의 코드 <input type="number" id="raw_code" value="255"><button data-code="raw">전송</button>
+    </div>
+  </section>
+  <section>
+    <h2>명령 로그 (DM 시점)</h2>
+    <pre id="cmd_log"></pre>
+  </section>
+  <section>
+    <h2>MCU 시뮬레이터 주입 <span id="sim_err" class="err"></span></h2>
+    <div id="inject"></div>
+    <table id="sim_tbl"></table>
+  </section>
+  <section>
+    <h2>시뮬레이터 로그 (MCU 시점)</h2>
+    <pre id="sim_log"></pre>
+  </section>
+  <section class="wide">
+    <h2>프레임 (최근 40)</h2>
+    <pre id="frames"></pre>
+  </section>
+</main>
+<script>
+const SIM = location.protocol + "//" + location.hostname + ":8881";
+const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
+const MCU_STATUS_BITS = ["estop", "safe_hold", "fault", "hb_timeout", "sd_ok", "bms_link", "drone_detected", "motion_active"];
+const MCU_STATUS_BAD = ["estop", "safe_hold", "fault", "hb_timeout"];
+const HI_BITS = ["HI-1", "HI-2", "HI-3", "HI-4", "HI-5", "HI-6"];
+const INJECT_BOOLS = ["estop", "ac_ok", "flood", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
+const INJECT_NUMS = ["contact_temp", "temp_in", "hum_in"];
+const CMD_COVER = [1, 2];
+const CMD_CHARGE_ON = 5;
+const CMD_BMS_WORD = [12, 13];
+const CMD_MCU_RESET = 14;
+const CMD_POWER_CYCLE = 15;
+const MCU_RESET_MAGIC = 0x5A5A;
+const POWER_CYCLE_MAGIC = 0xA5A5;
+
+async function getJson(url) {
+  const r = await fetch(url);
+  return r.json();
+}
+
+async function postJson(url, body) {
+  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return r.json();
+}
+
+function setText(id, text) {
+  document.getElementById(id).textContent = text;
+}
+
+function setHtml(id, html) {
+  document.getElementById(id).innerHTML = html;
+}
+
+function rows(id, pairs) {
+  setHtml(id, pairs.map(p => `<tr><td>${p[0]}</td><td>${p[1]}</td></tr>`).join(""));
+}
+
+function chips(list, all, badSet) {
+  return all.map(name => {
+    let cls = "chip";
+    const is_set = list.includes(name);
+    const is_bad = badSet !== undefined && badSet.includes(name);
+    if (is_set && is_bad) {
+      cls += " bad";
+    } else if (is_set) {
+      cls += " on";
+    }
+    return `<span class="${cls}">${name}</span>`;
+  }).join("");
+}
+
+function fmtTime(t) {
+  return new Date(t * 1000).toLocaleTimeString("ko-KR", { hour12: false }) + "." + String(Math.floor((t % 1) * 10));
+}
+
+function fmtCmd(c) {
+  let line = `${fmtTime(c.t)} #${c.seq} ${c.name}(${c.arg0},${c.arg1})`;
+  if (c.sent === false) {
+    line += " SEND-FAIL";
+  }
+  if (c.ack) {
+    let ack = "접수";
+    if (c.ack.result !== 0) {
+      ack = "거부:" + c.ack.reason;
+    }
+    line += ` | ACK ${ack} +${((c.ack.t - c.t) * 1000).toFixed(0)}ms`;
+  }
+  if (c.done) {
+    line += ` | DONE ${c.done.result} data=${c.done.data} +${((c.done.t - c.t) * 1000).toFixed(0)}ms`;
+  }
+  return line;
+}
+
+function renderMaster(s) {
+  const r = s.regs;
+  const d = s.decoded;
+  const st = s.link.stats;
+  setText("link", `${s.link.port}  ok ${st.ok} / timeout ${st.timeout} / exception ${st.exception}  |  상태 age ${s.link.status_age}s  |  HB_SEQ ${s.link.hb_seq}`);
+  let linkErr = "";
+  if (s.link.status_age > 1) {
+    linkErr = "MCU 응답 없음: " + s.link.last_error;
+  }
+  setText("linkerr", linkErr);
+  setHtml("mcu_status", chips(d.mcu_status, MCU_STATUS_BITS, MCU_STATUS_BAD));
+  setHtml("hard_block", chips(d.hard_block, HI_BITS, HI_BITS));
+  rows("mcu_tbl", [["FAULT_CODE", d.fault], ["MCU_TICK", r.MCU_TICK], ["FW", d.fw], ["UPTIME", r.UPTIME_s + " s"]]);
+  let ackText = "접수";
+  if (r.ACK_RESULT !== 0) {
+    ackText = "거부";
+  }
+  rows("fb_tbl", [
+    ["ACK", `seq ${r.ACK_SEQ} / ${ackText} / ${d.ack_reason}`],
+    ["DONE", `seq ${r.DONE_SEQ} / ${d.done_result} / data ${r.DONE_DATA}`],
+    ["ACTIVE", `seq ${r.ACTIVE_SEQ} / ${r.PROGRESS_PCT}%`],
+  ]);
+  rows("motion_tbl", [
+    ["COVER_STATE", d.cover_state],
+    ["COVER_LIMITS", chips(d.cover_limits, ["front_closed", "front_open", "side_closed", "side_open", "front_door", "side_door"])],
+    ["COVER_CURRENT", r.COVER_CURRENT_mA + " mA"],
+    ["SLIDE_STATE", d.slide_state],
+    ["SLIDE_LIMITS", chips(d.slide_limits, ["home", "extended"])],
+    ["SLIDE_CURRENT", r.SLIDE_CURRENT_mA + " mA"],
+    ["SLIDE_ENCODER", r.SLIDE_ENCODER],
+  ]);
+  rows("chg_tbl", [
+    ["CHG_STATE", d.chg_state],
+    ["OUTPUT_ON", r.CHG_OUTPUT_ON],
+    ["전압 / 전류", `${(r.CHG_VOLTAGE_10mV / 100).toFixed(2)} V / ${(r.CHG_CURRENT_10mA / 100).toFixed(2)} A`],
+    ["전류 상한", `${(r.CHG_CURRENT_LIMIT_10mA / 100).toFixed(2)} A`],
+    ["접점 온도", `${(r.CONTACT_TEMP_x10 / 10).toFixed(1)} ℃`],
+    ["CHG_FAULT", d.chg_fault],
+  ]);
+  rows("env_tbl", [
+    ["내부 온습도", `${(r.TEMP_IN_x10 / 10).toFixed(1)} ℃ / ${(r.HUM_IN_x10 / 10).toFixed(1)} %`],
+    ["FLOOD", r.FLOOD],
+    ["ENV_STALE", chips(d.env_stale, ["temp_hum", "flood"])],
+    ["PWR_FLAGS", chips(d.pwr_flags, ["ac_ok", "ups_on_battery", "ups_charging"])],
+    ["UPS", `${(r.UPS_VOLTAGE_10mV / 100).toFixed(2)} V / ${r.UPS_SOC_PCT} %`],
+    ["24V 버스", `${(r.BUS24_10mV / 100).toFixed(2)} V / ${(r.BUS24_10mA / 100).toFixed(2)} A`],
+    ["48V 버스", `${(r.BUS48_10mV / 100).toFixed(2)} V / ${(r.BUS48_10mA / 100).toFixed(2)} A`],
+    ["공조 출력", chips(d.climate_out, ["heater", "cooler", "fan"])],
+  ]);
+  setText("rb_climate", "되읽기 " + r.CLIMATE_MODE);
+  setHtml("rb_light", chips(d.light, ["inner", "outer"]));
+  setHtml("rb_alarm", chips(d.alarm, ["buzzer", "indicator"]));
+  setText("rb_led", "되읽기 " + d.led_pattern);
+  setText("rb_chglim", "적용 " + r.CHG_CURRENT_LIMIT_10mA);
+  const bmsKeys = Object.keys(r).filter(k => k.startsWith("BMS_") && !/_(HI|LO)$/.test(k));
+  setHtml("bms_tbl", bmsKeys.map(k => `<div><span style="color:#aaa">${k.slice(4)}</span> ${r[k]}</div>`).join(""));
+  setText("cmd_log", s.cmds.map(fmtCmd).join("\n"));
+  setText("frames", s.frames.slice().reverse().map(f => `${fmtTime(f[0])} ${f[1]} ${f[2].replace(/(..)/g, "$1 ")}`).join("\n"));
+}
+
+function buildInjectPanel(box) {
+  const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
+  const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
+  box.innerHTML = boolHtml + "<br>" + numHtml;
+  box.querySelectorAll("input").forEach(el => el.addEventListener("change", () => {
+    let value = parseFloat(el.value);
+    const is_checkbox = el.type === "checkbox";
+    if (is_checkbox) {
+      value = el.checked;
+    }
+    postJson(SIM + "/api/inject", { [el.dataset.key]: value });
+  }));
+}
+
+function renderSim(s) {
+  const inj = s.inject;
+  const n = s.internal;
+  const box = document.getElementById("inject");
+  if (box.children.length === 0) {
+    buildInjectPanel(box);
+  }
+  box.querySelectorAll("input").forEach(el => {
+    const is_editing = el === document.activeElement;
+    if (is_editing) {
+      return;
+    }
+    const is_checkbox = el.type === "checkbox";
+    if (is_checkbox) {
+      el.checked = inj[el.dataset.key];
+    } else {
+      el.value = inj[el.dataset.key];
+    }
+  });
+  let active = "-";
+  if (n.active) {
+    active = `#${n.active.seq} ${n.active.name}`;
+  }
+  rows("sim_tbl", [
+    ["sim time", n.time + " s"],
+    ["front / side / slide", `${n.front_pos} / ${n.side_pos} / ${n.slide_pos}`],
+    ["active", active],
+    ["safe_hold / fault", `${n.safe_hold} / ${n.fault}`],
+    ["hb_timeout / hb_age", `${n.hb_timeout} / ${n.hb_age}s`],
+    ["chg_on / bms_pwr", `${n.chg_on} / ${n.bms_pwr}`],
+    ["last_cmd_seq", n.last_cmd_seq],
+  ]);
+  setText("sim_log", s.log.slice().reverse().join("\n"));
+}
+
+function numberOf(id) {
+  return parseInt(document.getElementById(id).value);
+}
+
+function sendCommand(button) {
+  let code = parseInt(button.dataset.code);
+  const is_raw = button.dataset.code === "raw";
+  if (is_raw) {
+    code = numberOf("raw_code");
+  }
+  let arg0 = 0;
+  let arg1 = 0;
+  if (CMD_COVER.includes(code)) {
+    arg0 = numberOf("cover_mask");
+  }
+  if (code === CMD_CHARGE_ON) {
+    arg0 = numberOf("chg_arg");
+  }
+  if (CMD_BMS_WORD.includes(code)) {
+    arg0 = numberOf("bms_addr");
+    arg1 = numberOf("bms_val");
+  }
+  if (code === CMD_MCU_RESET) {
+    arg0 = MCU_RESET_MAGIC;
+  }
+  if (code === CMD_POWER_CYCLE) {
+    arg0 = POWER_CYCLE_MAGIC;
+    arg1 = numberOf("pc_delay");
+  }
+  postJson("/api/cmd", { code, arg0, arg1 });
+}
+
+function writeBits(addr) {
+  let value = 0;
+  document.querySelectorAll(`#set_tbl input.bit[data-addr="${addr}"]`).forEach(b => {
+    if (b.checked) {
+      value |= 1 << parseInt(b.dataset.bit);
+    }
+  });
+  postJson("/api/write", { addr: parseInt(addr), value });
+}
+
+document.querySelectorAll("button[data-code]").forEach(b => b.addEventListener("click", () => sendCommand(b)));
+document.getElementById("led_sel").innerHTML = LED_NAMES.map((name, i) => `<option value="${i}">${i} ${name}</option>`).join("");
+document.querySelectorAll("#set_tbl select, #set_tbl input[type=number]").forEach(el => el.addEventListener("change", () => {
+  postJson("/api/write", { addr: parseInt(el.dataset.addr), value: parseInt(el.value) });
+}));
+document.querySelectorAll("#set_tbl input.bit").forEach(el => el.addEventListener("change", () => writeBits(el.dataset.addr)));
+
+setInterval(() => {
+  getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "dm_master 연결 실패"));
+}, 200);
+setInterval(() => {
+  getJson(SIM + "/api/state").then(s => {
+    renderSim(s);
+    setText("sim_err", "");
+  }).catch(() => setText("sim_err", "(mcu_sim :8881 없음)"));
+}, 500);
+</script>
+</body>
+</html>
