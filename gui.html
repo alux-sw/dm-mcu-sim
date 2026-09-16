@@ -631,10 +631,30 @@ getJson("/api/icd").then(info => {
   applyStaticTitles();
 });
 
+// 텍스트를 드래그하는 동안 DOM 을 갈아치우면 선택이 풀리므로 그동안은 갱신을 멈춘다
+let mouseDown = false;
+document.addEventListener("mousedown", () => { mouseDown = true; });
+window.addEventListener("mouseup", () => { mouseDown = false; });
+window.addEventListener("blur", () => { mouseDown = false; });
+
+function isSelectingText() {
+  if (mouseDown) {
+    return true;
+  }
+  const sel = window.getSelection();
+  return sel !== null && sel.rangeCount > 0 && !sel.isCollapsed;
+}
+
 setInterval(() => {
+  if (isSelectingText()) {
+    return;
+  }
   getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "sm_master 연결 실패"));
 }, 200);
 setInterval(() => {
+  if (isSelectingText()) {
+    return;
+  }
   getJson(SIM + "/api/state").then(s => {
     renderSim(s);
     setText("sim_err", "");
