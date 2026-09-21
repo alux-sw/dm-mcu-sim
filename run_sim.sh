@@ -8,4 +8,4 @@ SM_PORT=$(sed -n 1p vserial.txt)
 MCU_PORT=$(sed -n 2p vserial.txt)
 python3 mcu_sim.py "$MCU_PORT" &
 python3 sm_master.py "$SM_PORT" &
-wait
+wait -n          # 셋 중 하나만 죽어도 빠져나온다 (trap 이 나머지를 정리 → systemd 가 통째로 재시작)
