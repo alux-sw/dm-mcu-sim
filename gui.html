@@ -28,11 +28,20 @@
   pre { margin: 0; font-size: 11px; max-height: 220px; overflow: auto; background: #1a1b1e; padding: 4px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
   .err { color: #f66; }
+  #force_box { margin: 4px 0 6px; }
+  #force_list { margin-top: 4px; }
+  .force-chip { display: inline-block; padding: 1px 6px; margin: 1px; border-radius: 3px; background: #7a5d00; color: #ffe08a; cursor: pointer; }
+  .force-chip:hover { background: #9a7400; }
+  td.val { cursor: cell; }
+  tr.forced td { background: #4a3a00; }
+  .force-x { color: #ffe08a; cursor: pointer; margin-left: 4px; }
+  .val-edit input { width: 72px; }
   .rx-head { color: #aaa; margin: 6px 0 2px; }
   .rx-bytes { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
   .rx-sec { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 4px 3px 6px; border-left: 3px solid var(--sec, #666); background: #202124; border-radius: 3px; }
   #rx_section { --rxf: 15px; }                 /* RX 바이트 글자 크기 — 이 한 줄로 패널 전체가 커진다 */
   body.rx-only #rx_section { --rxf: 20px; }    /* 새 창은 더 크게 */
+  body.hide-rsv .rx-grp.rsv { display: none; }  /* 예약(미할당) 주소 숨기기 */
   .rx-sec > b { width: 100%; font-size: calc(var(--rxf) * 0.7); font-weight: normal; color: var(--sec, #888); }
   .rx-grp { display: inline-flex; flex-direction: column; align-items: center; }
   .rx-grp > b { font-size: calc(var(--rxf) * 0.62); font-weight: normal; color: #9ab; white-space: nowrap; }
@@ -86,6 +95,15 @@
 <header>
   <b>SM ↔ MCU 디버그</b>
   <span id="link"></span>
+  <span id="runmode">
+    포트 <select id="rm_port"></select>
+    <select id="rm_mode">
+      <option value="both">가상 UART (마스터+시뮬)</option>
+      <option value="master">마스터만 (상대가 MCU 실물)</option>
+      <option value="slave">MCU 시뮬만 (상대가 DM 실물)</option>
+    </select>
+    <button id="rm_apply">적용</button> <span id="rm_msg" class="rx-head"></span>
+  </span>
   <span id="linkerr" class="err"></span>
 </header>
 <main>
@@ -217,6 +235,18 @@
   <section>
     <h2>MCU 시뮬레이터 주입 <span id="sim_err" class="err"></span></h2>
     <div id="inject"></div>
+    <div id="resp_box">
+      응답 조작 —
+      예외 <select id="rc_exc"><option value="2">0x02 주소</option><option value="3">0x03 값</option><option value="4">0x04 장치오류</option></select>
+      <input id="rc_exc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_exc_go">보냄</button>
+      · CRC 깨기 <input id="rc_crc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_crc_go">보냄</button>
+      · 지연 <input id="rc_delay" type="number" value="0" min="0" step="10" size="4"> ms <button id="rc_delay_go">적용</button>
+      <span id="rc_msg" class="rx-head"></span>
+    </div>
+    <div id="force_box">
+      레지스터 강제 (오른쪽 표의 값을 눌러 고친다) <button id="force_clear">전체 해제</button>
+      <div id="force_list"></div>
+    </div>
     <table id="sim_tbl"></table>
   </section>
   <section>
@@ -224,7 +254,7 @@
     <pre id="sim_log"></pre>
   </section>
   <section class="wide" id="rx_section">
-    <h2>마지막 RX (요청별 고정, 노란색 = 직전 표시 대비 바뀐 바이트) <button id="rx_popout">새 창</button></h2>
+    <h2>마지막 RX (요청별 고정, 노란색 = 직전 표시 대비 바뀐 바이트) <button id="rx_rsv">예약 숨기기</button> <button id="rx_popout">새 창</button></h2>
     <div id="rx_panel"></div>
   </section>
   <section class="wide">
@@ -319,9 +349,120 @@ function reasonTip(name) {
   return `${name}: ${ICD.reasons[name]}`;
 }
 
-function rows(id, pairs) {
-  setHtml(id, pairs.map(p => `<tr title="${escapeAttr(tip(p[2], p[3]))}"><td>${p[0]}</td><td>${p[1]}</td></tr>`).join(""));
+function regNames(regs) {
+  if (regs === undefined) {
+    return [];
+  }
+  if (typeof regs === "string") {
+    return DERIVED_REGS[regs] || [regs];
+  }
+  return regs;
 }
+
+function forceMap() {
+  if (simState === null || !simState.force) {
+    return {};
+  }
+  return simState.force;
+}
+
+function rows(id, pairs) {
+  setHtml(id, pairs.map(p => {
+    const names = regNames(p[2]).join(",");
+    const isForced = regNames(p[2]).some(n => forceMap()[n] !== undefined);
+    let cls = "";
+    let mark = "";
+    if (isForced) {
+      cls = " class=\"forced\"";
+      mark = ` <span class="force-x" data-regs="${names}" title="강제 해제">✕</span>`;
+    }
+    return `<tr${cls} title="${escapeAttr(tip(p[2], p[3]))}"><td>${p[0]}</td><td class="val" data-regs="${names}">${p[1]}${mark}</td></tr>`;
+  }).join(""));
+}
+
+// 값 칸을 눌러 그 행의 레지스터를 직접 고친다 (MCU 시뮬의 값을 강제로 고정)
+let lastRegs = {};
+let isEditing = false;
+
+function openEditor(cell) {
+  const names = (cell.dataset.regs || "").split(",").filter(n => n !== "" && lastRegs[n] !== undefined);
+  if (names.length === 0) {
+    return;
+  }
+  isEditing = true;
+  showEditBadge();
+  cell.innerHTML = `<span class="val-edit">`
+    + names.map(n => `${n} <input type="number" data-reg="${n}" value="${lastRegs[n]}"> `).join("")
+    + `<button class="val-ok">적용</button> <button class="val-no">취소</button></span>`;
+  const first = cell.querySelector("input");
+  first.focus();
+  first.select();
+}
+
+function closeEditor() {
+  isEditing = false;
+  showEditBadge();
+}
+
+function showEditBadge() {
+  let badge = byId("edit_badge");
+  if (badge === null) {
+    badge = document.createElement("span");
+    badge.id = "edit_badge";
+    badge.className = "err";
+    document.querySelector("header").appendChild(badge);
+  }
+  let text = "";
+  if (isEditing) {
+    text = "편집 중 — 화면 갱신 멈춤 (Esc 로 취소)";
+  }
+  badge.textContent = text;
+}
+
+document.addEventListener("click", e => {
+  const isOutside = isEditing && e.target.closest(".val-edit") === null;
+  if (isOutside) {
+    closeEditor();
+  }
+  const x = e.target.closest(".force-x");
+  if (x) {
+    const body = {};
+    x.dataset.regs.split(",").forEach(n => { body[n] = null; });
+    postJson(SIM + "/api/force", body);
+    return;
+  }
+  if (e.target.classList.contains("val-ok")) {
+    const body = {};
+    e.target.closest(".val-edit").querySelectorAll("input").forEach(i => {
+      body[i.dataset.reg] = parseInt(i.value);
+    });
+    postJson(SIM + "/api/force", body);
+    closeEditor();
+    return;
+  }
+  if (e.target.classList.contains("val-no")) {
+    closeEditor();
+    return;
+  }
+  const cell = e.target.closest("td.val");
+  if (cell && !isEditing) {
+    openEditor(cell);
+  }
+});
+document.addEventListener("keydown", e => {
+  if (!isEditing) {
+    return;
+  }
+  if (e.key === "Escape") {
+    closeEditor();
+  }
+  if (e.key === "Enter") {
+    const ok = document.querySelector(".val-ok");
+    if (ok) {
+      ok.click();
+    }
+  }
+});
 
 function chips(list, all, badSet) {
   return all.map(name => {
@@ -433,7 +574,7 @@ function rxGroup(label, cellsHtml, isDim) {
   if (isDim) {
     cls = "dim";
   }
-  return `<div class="rx-grp"><b class="${cls}">${label}</b><div>${cellsHtml}</div></div>`;
+  return `<div class="rx-grp ${isDim ? "rsv" : ""}"><b class="${cls}">${label}</b><div>${cellsHtml}</div></div>`;
 }
 
 function rxSectionHtml(label, color, groupsHtml) {
@@ -587,6 +728,7 @@ function applyStaticTitles() {
 
 function renderMaster(s) {
   const r = s.regs;
+  lastRegs = r;
   const d = s.decoded;
   const st = s.link.stats;
   setText("link", `${s.link.port}  ok ${st.ok} / timeout ${st.timeout} / exception ${st.exception}  |  상태 age ${s.link.status_age}s  |  HB_SEQ ${s.link.hb_seq}`);
@@ -788,9 +930,81 @@ function renderSim(s) {
     ["maint", `${n.maint_active} / ${n.maint_source}`],
     ["last_cmd_seq", n.last_cmd_seq],
   ]);
+  renderForce(s.force || {});
   setText("sim_log", s.log.slice().reverse().join("\n"));
   renderStation(s);
 }
+
+// 강제값: 시뮬 계산을 덮어써 어떤 입력 레지스터든 임의 값으로 고정한다
+function renderForce(force) {
+  const list = byId("force_list");
+  const keys = Object.keys(force);
+  if (keys.length === 0) {
+    list.innerHTML = "<span class='rx-head'>강제 중인 레지스터 없음 (칩을 누르면 해제)</span>";
+  } else {
+    list.innerHTML = keys.map(k => `<span class="force-chip" data-key="${k}">${k} = ${force[k]} ✕</span>`).join("");
+  }
+  // 이름 자동완성은 마스터가 읽어 온 레지스터 목록에서 (renderMaster 가 채운다)
+}
+
+byId("force_clear").addEventListener("click", () => postJson(SIM + "/api/force", {}));
+byId("force_list").addEventListener("click", e => {
+  const chip = e.target.closest(".force-chip");
+  if (chip) {
+    postJson(SIM + "/api/force", { [chip.dataset.key]: null });
+  }
+});
+
+// 실행 모드: 어떤 시리얼 포트에 무엇을 붙일지 화면에서 고른다 (적용하면 서비스가 재기동된다)
+function loadPorts() {
+  getJson("/api/ports").then(p => {
+    const sel = byId("rm_port");
+    const opts = ["<option value=''>가상 (pty 자동 생성)</option>"]
+      .concat(p.ports.map(x => `<option value="${x}">${x}</option>`));
+    sel.innerHTML = opts.join("");
+    sel.value = p.port || "";
+    byId("rm_mode").value = p.mode || "both";
+  }).catch(() => {});
+}
+
+byId("rm_apply").addEventListener("click", () => {
+  const port = byId("rm_port").value;
+  const mode = byId("rm_mode").value;
+  if (port === "" && mode !== "both") {
+    setText("rm_msg", "실물 포트를 골라야 한다");
+    return;
+  }
+  setText("rm_msg", "재기동 중…");
+  postJson("/api/runmode", { port: port, mode: mode });
+  let msg = "가상 UART 로 재기동";
+  if (port !== "") {
+    msg = port + " 로 재기동";
+  }
+  setTimeout(() => setText("rm_msg", msg), 1500);
+});
+loadPorts();
+setInterval(loadPorts, 5000);
+
+// 응답 조작: 슬레이브가 마스터에 영향을 줄 수 있는 유일한 수단 (값·예외·지연)
+byId("rc_exc_go").addEventListener("click", () => {
+  const n = parseInt(byId("rc_exc_n").value);
+  postJson(SIM + "/api/inject", { exc_code: parseInt(byId("rc_exc").value), exc_n: n });
+  setText("rc_msg", `다음 ${n} 회 예외 응답`);
+});
+byId("rc_crc_go").addEventListener("click", () => {
+  const n = parseInt(byId("rc_crc_n").value);
+  postJson(SIM + "/api/inject", { bad_crc_n: n });
+  setText("rc_msg", `다음 ${n} 회 CRC 깨서 응답`);
+});
+byId("rc_delay_go").addEventListener("click", () => {
+  const ms = parseInt(byId("rc_delay").value);
+  postJson(SIM + "/api/inject", { resp_delay_ms: ms });
+  let msg = "응답 지연 해제";
+  if (ms > 0) {
+    msg = `응답 ${ms} ms 지연 — ICD 대기는 100 ms`;
+  }
+  setText("rc_msg", msg);
+});
 
 function numberOf(id) {
   return parseInt(byId(id).value);
@@ -850,6 +1064,15 @@ getJson("/api/icd").then(info => {
 });
 
 // #rx 로 열면 RX 패널만 보이는 창이 된다 (해시라 서버는 같은 '/' 를 내보냄)
+const rsvBtn = byId("rx_rsv");
+const setRsv = hide => {
+  document.body.classList.toggle("hide-rsv", hide);
+  rsvBtn.textContent = hide ? "예약 보기" : "예약 숨기기";
+  localStorage.setItem("hideRsv", hide ? "1" : "");
+};
+rsvBtn.addEventListener("click", () => setRsv(!document.body.classList.contains("hide-rsv")));
+setRsv(localStorage.getItem("hideRsv") === "1");
+
 const isRxOnly = location.hash === "#rx";
 document.body.classList.toggle("rx-only", isRxOnly);
 byId("rx_popout").addEventListener("click", () => {
@@ -875,13 +1098,13 @@ function isSelectingText() {
 }
 
 setInterval(() => {
-  if (isSelectingText()) {
+  if (isSelectingText() || isEditing) {
     return;
   }
   getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "sm_master 연결 실패"));
 }, 200);
 setInterval(() => {
-  if (isSelectingText() || isRxOnly) {
+  if (isSelectingText() || isRxOnly || isEditing) {
     return;
   }
   getJson(SIM + "/api/state").then(s => {

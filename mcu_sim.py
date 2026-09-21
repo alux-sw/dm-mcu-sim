@@ -41,7 +41,26 @@ kInjectDefaults = {
     "btn_door": False, "btn_slide": False, "btn_maint": False,
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
     "cover_sec": kCoverMoveSec, "slide_sec": kSlideMoveSec, "motion_timeout_sec": kMotionTimeoutSec,
+    "exc_code": 0, "exc_n": 0,          # 다음 n 회 응답을 예외로 (2 주소, 3 값, 4 장치오류)
+    "bad_crc_n": 0,                     # 다음 n 회 응답의 CRC 를 깨서 보낸다
+    "resp_delay_ms": 0,                 # 응답을 이만큼 늦춘다 (ICD 응답 대기 100ms)
 }
+
+
+kInputByName = {name: addr for addr, name in icd.INPUT_NAMES.items()}
+
+
+def force_addr(key):
+    """레지스터 이름이나 0xNN / 십진 주소를 입력 레지스터 주소로"""
+    if key in kInputByName:
+        return kInputByName[key]
+    try:
+        addr = int(key, 0)
+    except (TypeError, ValueError):
+        return None
+    if 0 <= addr < icd.INPUT_COUNT:
+        return addr
+    return None
 
 
 def u16(value):
@@ -61,6 +80,7 @@ class Mcu:
         self.lock = threading.Lock()
         self.log = collections.deque(maxlen=kLogLen)
         self.inject = dict(kInjectDefaults)
+        self.force = {}                              # 입력 레지스터 강제값 {주소: 값}. 시뮬 계산을 덮어쓴다
         self.now = 0.0
         self.holding = {addr: 0 for addr in icd.HOLDING_NAMES}
         self.inputs = [0] * icd.INPUT_COUNT
@@ -358,6 +378,11 @@ class Mcu:
         self.tick_motion()
         self.tick_charger()
         self.fill_inputs()
+        self.apply_force()
+
+    def apply_force(self):
+        for addr, value in self.force.items():
+            self.inputs[addr] = value
 
     def run_timers(self):
         due = [t for t in self.timers if t[0] <= self.now]
@@ -632,6 +657,7 @@ class Mcu:
                           "local": self.active["seq"] == 0}
             return {
                 "inject": dict(self.inject),
+                "force": {icd.INPUT_NAMES.get(a, hex(a)): v for a, v in self.force.items()},
                 "internal": {
                     "time": round(self.now, 1),
                     "cover_pos": round(self.cover_pos, 2),
@@ -662,6 +688,38 @@ class Mcu:
                 "log": list(self.log),
             }
 
+    def response_policy(self, fc, resp):
+        """예외 강제·CRC 깨기·지연을 적용한 응답과 지연 시간을 돌려준다"""
+        inj = self.inject
+        is_exception = inj["exc_n"] > 0 and inj["exc_code"] != 0
+        if is_exception:
+            inj["exc_n"] -= 1
+            resp = mb.resp_exception(fc, inj["exc_code"])
+            self.note("예외 %d 강제 (남은 %d 회)" % (inj["exc_code"], inj["exc_n"]))
+        if inj["bad_crc_n"] > 0:
+            inj["bad_crc_n"] -= 1
+            resp = bytes(resp[:-1]) + bytes([resp[-1] ^ 0xFF])
+            self.note("CRC 깨서 응답 (남은 %d 회)" % inj["bad_crc_n"])
+        return resp, inj["resp_delay_ms"] / 1000.0
+
+    def set_force(self, body):
+        """{"BUS24_V": 2350, "CHG_STATE": null} — 이름이나 0xNN 주소. null 은 해제, 빈 본문은 전체 해제"""
+        with self.lock:
+            if not body:
+                self.force.clear()
+                self.note("force 전체 해제")
+            for key, value in body.items():
+                addr = force_addr(key)
+                if addr is None:
+                    continue
+                if value is None:
+                    self.force.pop(addr, None)
+                    self.note("force %s 해제" % icd.INPUT_NAMES.get(addr, hex(addr)))
+                else:
+                    self.force[addr] = u16(int(value))
+                    self.note("force %s=%d" % (icd.INPUT_NAMES.get(addr, hex(addr)), self.force[addr]))
+        return self.snapshot()
+
     def set_inject(self, body):
         with self.lock:
             for key, value in body.items():
@@ -681,9 +739,12 @@ def serve_serial(mcu, fd):
         with mcu.lock:
             mcu.on_rx()
             resp = mcu.handle(frame)
+            resp, delay = mcu.response_policy(frame[1], resp)
             is_muted = mcu.inject["mute"]
         if is_muted:
             continue
+        if delay > 0:
+            time.sleep(delay)
         os.write(fd, resp)
 
 
@@ -697,6 +758,7 @@ def main():
     webapi.serve(kHttpPort, {
         ("GET", "/api/state"): lambda body: mcu.snapshot(),
         ("POST", "/api/inject"): mcu.set_inject,
+        ("POST", "/api/force"): mcu.set_force,
     })
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
     next_at = time.monotonic()
