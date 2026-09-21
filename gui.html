@@ -31,13 +31,15 @@
   .rx-head { color: #aaa; margin: 6px 0 2px; }
   .rx-bytes { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
   .rx-sec { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 4px 3px 6px; border-left: 3px solid var(--sec, #666); background: #202124; border-radius: 3px; }
-  .rx-sec > b { width: 100%; font-size: 9px; font-weight: normal; color: var(--sec, #888); }
+  #rx_section { --rxf: 15px; }                 /* RX 바이트 글자 크기 — 이 한 줄로 패널 전체가 커진다 */
+  body.rx-only #rx_section { --rxf: 20px; }    /* 새 창은 더 크게 */
+  .rx-sec > b { width: 100%; font-size: calc(var(--rxf) * 0.7); font-weight: normal; color: var(--sec, #888); }
   .rx-grp { display: inline-flex; flex-direction: column; align-items: center; }
-  .rx-grp > b { font-size: 8px; font-weight: normal; color: #9ab; white-space: nowrap; }
+  .rx-grp > b { font-size: calc(var(--rxf) * 0.62); font-weight: normal; color: #9ab; white-space: nowrap; }
   .rx-grp > b.dim { color: #555; }
   .rx-grp > div { display: flex; gap: 1px; }
-  .rxb { font-family: ui-monospace, monospace; font-size: 11px; width: 26px; text-align: center; background: #26272b; border-radius: 3px; padding: 1px 0; }
-  .rxb i { display: block; font-style: normal; font-size: 8px; color: #666; }
+  .rxb { font-family: ui-monospace, monospace; font-size: var(--rxf); width: calc(var(--rxf) * 2.1); text-align: center; background: #26272b; border-radius: 3px; padding: 1px 0; }
+  .rxb i { display: block; font-style: normal; font-size: calc(var(--rxf) * 0.62); color: #666; }
   .rxb.hdr { color: #8ab; }
   .rxb.chg { animation: rxflash 1.5s ease-out; }
   @keyframes rxflash { 0% { background: #f9d71c; color: #000; } 100% { background: #26272b; color: #ddd; } }
