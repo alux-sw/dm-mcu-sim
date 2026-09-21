@@ -28,15 +28,6 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# 인자가 없으면 화면(GUI)에서 고른 값을 쓴다
-if [ -z "$port" ] && [ -f run.env ]; then
-    . ./run.env
-    port="$SIM_PORT"
-    if [ "$SIM_MODE" = slave ]; then
-        is_slave_only=true
-    fi
-fi
-
 # 포트가 없거나 못 열면 가상으로 — 화면이 죽어 손도 못 대는 상황을 막는다
 if [ -n "$port" ] && [ ! -w "$port" ]; then
     echo "[!] $port 를 열 수 없다 — 가상 UART 로 돌아간다" >&2

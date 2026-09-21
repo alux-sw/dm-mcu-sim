@@ -95,15 +95,6 @@
 <header>
   <b>SM ↔ MCU 디버그</b>
   <span id="link"></span>
-  <span id="runmode">
-    포트 <select id="rm_port"></select>
-    <select id="rm_mode">
-      <option value="both">가상 UART (마스터+시뮬)</option>
-      <option value="master">마스터만 (상대가 MCU 실물)</option>
-      <option value="slave">MCU 시뮬만 (상대가 DM 실물)</option>
-    </select>
-    <button id="rm_apply">적용</button> <span id="rm_msg" class="rx-head"></span>
-  </span>
   <span id="linkerr" class="err"></span>
 </header>
 <main>
@@ -967,36 +958,6 @@ byId("force_list").addEventListener("click", e => {
     postJson(SIM + "/api/force", { [chip.dataset.key]: null });
   }
 });
-
-// 실행 모드: 어떤 시리얼 포트에 무엇을 붙일지 화면에서 고른다 (적용하면 서비스가 재기동된다)
-function loadPorts() {
-  getJson("/api/ports").then(p => {
-    const sel = byId("rm_port");
-    const opts = ["<option value=''>가상 (pty 자동 생성)</option>"]
-      .concat(p.ports.map(x => `<option value="${x}">${x}</option>`));
-    sel.innerHTML = opts.join("");
-    sel.value = p.port || "";
-    byId("rm_mode").value = p.mode || "both";
-  }).catch(() => {});
-}
-
-byId("rm_apply").addEventListener("click", () => {
-  const port = byId("rm_port").value;
-  const mode = byId("rm_mode").value;
-  if (port === "" && mode !== "both") {
-    setText("rm_msg", "실물 포트를 골라야 한다");
-    return;
-  }
-  setText("rm_msg", "재기동 중…");
-  postJson("/api/runmode", { port: port, mode: mode });
-  let msg = "가상 UART 로 재기동";
-  if (port !== "") {
-    msg = port + " 로 재기동";
-  }
-  setTimeout(() => setText("rm_msg", msg), 1500);
-});
-loadPorts();
-setInterval(loadPorts, 5000);
 
 // 응답 조작: 슬레이브가 마스터에 영향을 줄 수 있는 유일한 수단 (값·예외·지연)
 byId("rc_exc_go").addEventListener("click", () => {
