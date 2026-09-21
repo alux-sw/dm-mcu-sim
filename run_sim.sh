@@ -1,5 +1,5 @@
 #!/bin/bash
-# SM 마스터와 MCU 시뮬레이터를 띄운다 (GUI: http://localhost:8880)
+# SM 마스터와 MCU 시뮬레이터를 띄운다 (화면: 마스터 http://localhost:8880, 시뮬레이터 :8881)
 #
 #   ./run_sim.sh                        가상 UART 쌍 위에 둘 다 (기본)
 #   ./run_sim.sh --port /dev/ttyUSB0    실물 포트에 SM 마스터만 — 상대는 벤더 MCU
@@ -27,15 +27,6 @@ while [ $# -gt 0 ]; do
         *) echo "모르는 인자: $1" >&2; exit 1 ;;
     esac
 done
-
-# 인자가 없으면 화면(GUI)에서 고른 값을 쓴다
-if [ -z "$port" ] && [ -f run.env ]; then
-    . ./run.env
-    port="$SIM_PORT"
-    if [ "$SIM_MODE" = slave ]; then
-        is_slave_only=true
-    fi
-fi
 
 # 포트가 없거나 못 열면 가상으로 — 화면이 죽어 손도 못 대는 상황을 막는다
 if [ -n "$port" ] && [ ! -w "$port" ]; then

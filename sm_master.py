@@ -1,9 +1,7 @@
 """SM(Station Manager) 마스터 프로토타입: ICD 폴링 주기로 MCU 를 읽고 명령·설정을 쓴다"""
 import collections
-import glob
 import os
 import queue
-import subprocess
 import sys
 import threading
 import time
@@ -208,15 +206,6 @@ class Sm:
         self.jobs.put(("write", int(body["addr"]), int(body["value"])))
         return {"ok": True}
 
-    def icd_info(self, body):
-        """툴팁용 ICD 설명: 이름 → [주소, 설명]"""
-        return {
-            "inputs": {name: [addr, icd.INPUT_DESC.get(addr, "")] for addr, name in icd.INPUT_NAMES.items()},
-            "holding": {name: [addr, icd.HOLDING_DESC.get(addr, "")] for addr, name in icd.HOLDING_NAMES.items()},
-            "cmds": {code: [name, icd.CMD_DESC.get(code, "")] for code, name in icd.CMD_NAMES.items()},
-            "reasons": {name: icd.REASON_DESC.get(code, "") for code, name in icd.REASON_NAMES.items()},
-        }
-
     def snapshot(self, body):
         with self.lock:
             r = list(self.regs)
@@ -272,37 +261,6 @@ class Sm:
         }
 
 
-kRunEnv = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.env")
-kUnit = "dm-mcu-sim"
-
-
-def list_ports(_body=None):
-    """꽂혀 있는 시리얼 포트와 현재 실행 모드"""
-    mode = "both"
-    port = ""
-    if os.path.exists(kRunEnv):
-        for line in open(kRunEnv, encoding="utf-8"):
-            key, _, value = line.strip().partition("=")
-            if key == "SIM_PORT":
-                port = value
-            if key == "SIM_MODE":
-                mode = value or "both"
-    return {"ports": sorted(glob.glob("/dev/ttyUSB*") + glob.glob("/dev/ttyACM*")),
-            "port": port, "mode": mode}
-
-
-def set_runmode(body):
-    """포트·모드를 저장하고 서비스를 재기동한다 (재기동은 우리 cgroup 밖에서)"""
-    port = (body.get("port") or "").strip()
-    mode = body.get("mode") or "both"
-    with open(kRunEnv, "w", encoding="utf-8") as f:
-        f.write("SIM_PORT=%s\nSIM_MODE=%s\n" % (port, mode))
-    subprocess.Popen(["systemd-run", "--user", "--collect", "--quiet",
-                      "systemctl", "--user", "restart", kUnit],
-                     start_new_session=True)
-    return {"port": port, "mode": mode, "restarting": True}
-
-
 def main():
     port = kDefaultPort
     if len(sys.argv) > 1:
@@ -311,11 +269,9 @@ def main():
     sm = Sm(fd, port)
     webapi.serve(kHttpPort, {
         ("GET", "/api/state"): sm.snapshot,
-        ("GET", "/api/icd"): sm.icd_info,
+        ("GET", "/api/icd"): lambda body: icd.describe(),
         ("POST", "/api/cmd"): sm.send_command,
         ("POST", "/api/write"): sm.write_setting,
-        ("GET", "/api/ports"): list_ports,
-        ("POST", "/api/runmode"): set_runmode,
     }, html_path=kGuiFile)
     print("sm_master: %s, http :%d" % (port, kHttpPort), flush=True)
     sm.loop()

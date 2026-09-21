@@ -11,6 +11,7 @@ import webapi
 
 kDefaultPort = "/dev/ttyUSB0"
 kHttpPort = 8881
+kGuiFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim.html")
 kTickSec = 0.1
 kCoverMoveSec = 3.0
 kSlideMoveSec = 4.0
@@ -685,8 +686,16 @@ class Mcu:
                     "maint_source": icd.MAINT_SOURCE_NAMES[self.maint_source],
                 },
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
+                "regs": {name: self.signed_input(a) for a, name in icd.INPUT_NAMES.items()},
                 "log": list(self.log),
             }
+
+    def signed_input(self, addr):
+        """마스터 화면과 같게 부호 있는 레지스터는 음수로 보인다"""
+        value = self.inputs[addr]
+        if addr in icd.SIGNED_INPUTS and value >= 0x8000:
+            value -= 0x10000
+        return value
 
     def response_policy(self, fc, resp):
         """예외 강제·CRC 깨기·지연을 적용한 응답과 지연 시간을 돌려준다"""
@@ -759,7 +768,8 @@ def main():
         ("GET", "/api/state"): lambda body: mcu.snapshot(),
         ("POST", "/api/inject"): mcu.set_inject,
         ("POST", "/api/force"): mcu.set_force,
-    })
+        ("GET", "/api/icd"): lambda body: icd.describe(),
+    }, html_path=kGuiFile)
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
     next_at = time.monotonic()
     while True:

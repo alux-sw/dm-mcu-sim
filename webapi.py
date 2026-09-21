@@ -2,6 +2,7 @@
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import urlsplit
 
 kCorsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -30,7 +31,7 @@ def serve(port, routes, html_path=None):
             self.send(204, b"", "text/plain")
 
         def do_GET(self):
-            is_root = self.path == "/"
+            is_root = urlsplit(self.path).path == "/"  # GUI 는 /?sim=... 처럼 쿼리가 붙어서 온다
             if is_root and html_path is not None:
                 with open(html_path, "rb") as f:
                     self.send(200, f.read(), "text/html; charset=utf-8")

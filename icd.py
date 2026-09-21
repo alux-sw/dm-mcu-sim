@@ -455,3 +455,13 @@ REASON_DESC = {
     MOTION_TIMEOUT: "(FAULT_CODE) 모션 제한 시간 초과",
     LIMIT_CONFLICT: "(FAULT_CODE) 리미트 스위치 모순 (열림·닫힘 동시 검출 등)",
 }
+
+
+def describe():
+    """툴팁용 ICD 설명: 이름 → [주소, 설명]"""
+    return {
+        "inputs": {name: [addr, INPUT_DESC.get(addr, "")] for addr, name in INPUT_NAMES.items()},
+        "holding": {name: [addr, HOLDING_DESC.get(addr, "")] for addr, name in HOLDING_NAMES.items()},
+        "cmds": {code: [name, CMD_DESC.get(code, "")] for code, name in CMD_NAMES.items()},
+        "reasons": {name: REASON_DESC.get(code, "") for code, name in REASON_NAMES.items()},
+    }

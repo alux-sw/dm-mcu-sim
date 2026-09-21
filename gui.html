@@ -28,14 +28,6 @@
   pre { margin: 0; font-size: 11px; max-height: 220px; overflow: auto; background: #1a1b1e; padding: 4px; }
   .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; }
   .err { color: #f66; }
-  #force_box { margin: 4px 0 6px; }
-  #force_list { margin-top: 4px; }
-  .force-chip { display: inline-block; padding: 1px 6px; margin: 1px; border-radius: 3px; background: #7a5d00; color: #ffe08a; cursor: pointer; }
-  .force-chip:hover { background: #9a7400; }
-  td.val { cursor: cell; }
-  tr.forced td { background: #4a3a00; }
-  .force-x { color: #ffe08a; cursor: pointer; margin-left: 4px; }
-  .val-edit input { width: 72px; }
   .rx-head { color: #aaa; margin: 6px 0 2px; }
   .rx-bytes { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-start; }
   .rx-sec { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 4px 3px 6px; border-left: 3px solid var(--sec, #666); background: #202124; border-radius: 3px; }
@@ -52,125 +44,16 @@
   .rxb.hdr { color: #8ab; }
   .rxb.chg { animation: rxflash 1.5s ease-out; }
   @keyframes rxflash { 0% { background: #f9d71c; color: #000; } 100% { background: #26272b; color: #ddd; } }
-  .station-bar { display: flex; gap: 18px; align-items: center; margin-bottom: 4px; }
-  svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; background: #17181b; border-radius: 6px; }
-  svg text { font-family: system-ui, sans-serif; fill: #ccc; font-size: 12px; }
-  .door { fill: #8a8f99; transition: transform .2s linear; }
-  #door_front { transform-origin: 566px 290px; }
-  #door_side { transform-origin: 210px 286px; }
-  #platform { transition: transform .2s linear; }
-  .moving { stroke: #ffb300; stroke-width: 2; }
-  .hide { display: none; }
-  .led.p0 { fill: #333; }
-  .led.p1 { fill: #2e7d32; }
-  .led.p2 { fill: #ffb300; animation: blink .6s infinite; }
-  .led.p3 { fill: #1e88e5; }
-  .led.p4 { fill: #00acc1; animation: blink 1s infinite; }
-  .led.p5 { fill: #ef6c00; animation: blink .5s infinite; }
-  .led.p6 { fill: #d32f2f; animation: blink .25s infinite; }
-  .led.p7 { fill: #8e24aa; }
-  .led.p8 { fill: #43a047; animation: breathe 2s infinite; }
-  .led.p9 { fill: #eee; animation: blink .3s infinite; }
-  .lamp { fill: #444; }
-  .lamp.on { fill: #fff59d; filter: drop-shadow(0 0 6px #fff59d); }
-  .interior { fill: #24262b; }
-  .interior.lit { fill: #3a3b2c; }
-  .pad { fill: #777; }
-  .pad.on { fill: #ffd54f; animation: blink .5s infinite; }
   .dim { opacity: .2; }
-  .blink { animation: blink .5s infinite; }
-  .spin { animation: spin 1s linear infinite; transform-origin: center; transform-box: fill-box; }
-  .pbtn { fill: #555; stroke: #888; cursor: pointer; }
-  .pbtn:hover { stroke: #fff; }
-  .pbtn.on { fill: #ffb300; }
-  #estop_btn { fill: #7f1d1d; stroke: #a33; cursor: pointer; }
-  #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
-  #banner { font-size: 26px; font-weight: bold; }
-  @keyframes blink { 50% { opacity: .15; } }
-  @keyframes breathe { 50% { opacity: .3; } }
-  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
 <header>
   <b>SM ↔ MCU 디버그</b>
   <span id="link"></span>
-  <span id="runmode">
-    포트 <select id="rm_port"></select>
-    <select id="rm_mode">
-      <option value="both">가상 UART (마스터+시뮬)</option>
-      <option value="master">마스터만 (상대가 MCU 실물)</option>
-      <option value="slave">MCU 시뮬만 (상대가 DM 실물)</option>
-    </select>
-    <button id="rm_apply">적용</button> <span id="rm_msg" class="rx-head"></span>
-  </span>
   <span id="linkerr" class="err"></span>
 </header>
 <main>
-  <section class="wide">
-    <div class="station-bar">
-      <h2 style="margin:0">스테이션 (측면에서 본 모습, 오른쪽이 정면)</h2>
-      <span>커버 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="cover_sec"></span>
-      <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
-      <span id="status_line"></span>
-    </div>
-    <svg viewBox="0 0 900 340">
-      <text id="banner" x="450" y="44" text-anchor="middle"></text>
-      <text id="env_text" x="885" y="24" text-anchor="end"></text>
-      <text id="maint_text" x="885" y="44" text-anchor="end" fill="#ce93d8"></text>
-      <text id="hb_text" x="15" y="24"></text>
-      <line x1="0" y1="300" x2="900" y2="300" stroke="#555"/>
-      <rect id="interior" class="interior" x="158" y="110" width="404" height="180"/>
-      <rect id="flood" class="hide" x="158" y="274" width="404" height="16" fill="#1e88e5" opacity=".6"/>
-      <rect x="150" y="290" width="420" height="10" fill="#555"/>
-      <rect x="150" y="110" width="8" height="180" fill="#666"/>
-      <rect x="150" y="102" width="420" height="8" fill="#666"/>
-      <rect x="562" y="110" width="8" height="20" fill="#666"/>
-      <rect id="led" class="led p0" x="160" y="94" width="400" height="6" rx="3"/>
-      <text x="360" y="88" text-anchor="middle" font-size="10">상태 LED</text>
-      <line x1="300" y1="240" x2="880" y2="240" stroke="#777" stroke-dasharray="6 4"/>
-      <text x="760" y="256" fill="#888">슬라이드 레일 (전개 방향 →)</text>
-      <rect id="door_side" class="door" x="170" y="200" width="80" height="86" fill="#7a7f88"/>
-      <text x="210" y="196" text-anchor="middle" font-size="10">측면 도어</text>
-      <g id="platform">
-        <rect id="platform_rect" x="300" y="226" width="160" height="14" rx="3" fill="#9aa4ad"/>
-        <rect id="pad1" class="pad" x="366" y="220" width="18" height="6"/>
-        <rect id="pad2" class="pad" x="410" y="220" width="18" height="6"/>
-        <g id="drone" class="hide">
-          <line x1="350" y1="206" x2="450" y2="206" stroke="#aaa" stroke-width="3"/>
-          <ellipse cx="350" cy="202" rx="20" ry="4" fill="#999"/>
-          <ellipse cx="450" cy="202" rx="20" ry="4" fill="#999"/>
-          <rect x="378" y="198" width="44" height="18" rx="5" fill="#cfd8dc"/>
-          <rect x="384" y="216" width="6" height="4" fill="#555"/>
-          <rect x="410" y="216" width="6" height="4" fill="#555"/>
-        </g>
-        <text id="bolt" class="hide" x="400" y="262" text-anchor="middle" font-size="18">⚡</text>
-        <text id="chg_text" x="400" y="280" text-anchor="middle"></text>
-      </g>
-      <rect id="door_front" class="door" x="562" y="130" width="8" height="160"/>
-      <text x="646" y="316" text-anchor="middle" font-size="10">정면 도어 (아래로 젖혀짐)</text>
-      <circle id="lamp_out" class="lamp" cx="586" cy="112" r="7"/>
-      <text x="612" y="116" font-size="10">외부등</text>
-      <circle id="lamp_in" class="lamp" cx="360" cy="122" r="6"/>
-      <text x="360" y="138" text-anchor="middle" font-size="10">내부등</text>
-      <text id="buzzer" class="dim" x="172" y="140" font-size="16">🔔</text>
-      <circle id="indicator" cx="205" cy="133" r="5" fill="#444"/>
-      <text x="190" y="156" text-anchor="middle" font-size="10">알람</text>
-      <text id="heater" class="dim" x="480" y="140" font-size="16">🔥</text>
-      <text id="cooler" class="dim" x="510" y="140" font-size="16">❄️</text>
-      <text id="fan" class="dim" x="540" y="140" font-size="16">🌀</text>
-      <text x="515" y="156" text-anchor="middle" font-size="10">공조</text>
-      <circle id="estop_btn" cx="60" cy="140" r="16"/>
-      <text x="60" y="172" text-anchor="middle" font-size="10">E-STOP (클릭)</text>
-      <text x="60" y="200" text-anchor="middle" font-size="10">현장 버튼 (클릭)</text>
-      <circle id="btn_door" class="pbtn" cx="45" cy="222" r="9"/>
-      <text x="60" y="226" font-size="10">도어</text>
-      <circle id="btn_slide" class="pbtn" cx="45" cy="250" r="9"/>
-      <text x="60" y="254" font-size="10">슬라이드</text>
-      <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
-      <text x="60" y="282" font-size="10">정비</text>
-    </svg>
-  </section>
   <section>
     <h2>MCU 상태</h2>
     <div id="mcu_status"></div>
@@ -232,27 +115,6 @@
     <h2>명령 로그 (SM 시점)</h2>
     <pre id="cmd_log"></pre>
   </section>
-  <section>
-    <h2>MCU 시뮬레이터 주입 <span id="sim_err" class="err"></span></h2>
-    <div id="inject"></div>
-    <div id="resp_box">
-      응답 조작 —
-      예외 <select id="rc_exc"><option value="2">0x02 주소</option><option value="3">0x03 값</option><option value="4">0x04 장치오류</option></select>
-      <input id="rc_exc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_exc_go">보냄</button>
-      · CRC 깨기 <input id="rc_crc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_crc_go">보냄</button>
-      · 지연 <input id="rc_delay" type="number" value="0" min="0" step="10" size="4"> ms <button id="rc_delay_go">적용</button>
-      <span id="rc_msg" class="rx-head"></span>
-    </div>
-    <div id="force_box">
-      레지스터 강제 (오른쪽 표의 값을 눌러 고친다) <button id="force_clear">전체 해제</button>
-      <div id="force_list"></div>
-    </div>
-    <table id="sim_tbl"></table>
-  </section>
-  <section>
-    <h2>시뮬레이터 로그 (MCU 시점)</h2>
-    <pre id="sim_log"></pre>
-  </section>
   <section class="wide" id="rx_section">
     <h2>마지막 RX (요청별 고정, 노란색 = 직전 표시 대비 바뀐 바이트) <button id="rx_rsv">예약 숨기기</button> <button id="rx_popout">새 창</button></h2>
     <div id="rx_panel"></div>
@@ -263,18 +125,13 @@
   </section>
 </main>
 <script>
-const SIM = location.protocol + "//" + location.hostname + ":8881";
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
 const MCU_STATUS_BITS = ["estop", "safe_hold", "fault", "hb_timeout", "sd_ok", "bms_link", "drone_detected", "motion_active"];
 const MCU_STATUS_BAD = ["estop", "safe_hold", "fault", "hb_timeout"];
 const HI_BITS = ["HI-1", "HI-2", "HI-3", "HI-4", "HI-5", "HI-6"];
-const INJECT_BOOLS = ["estop", "ac_ok", "flood", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
-const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
-const INJECT_NUMS = ["contact_temp", "temp_in", "hum_in", "motion_timeout_sec"];
 const CMD_CHARGE_ON = 5;
 const CMD_POWER_CYCLE = 15;
 const POWER_CYCLE_MAGIC = 0xA5A5;
-const SLIDE_TRAVEL = 330;
 const DERIVED_REGS = {
   BMS_CURRENT_mA: ["BMS_CURRENT_mA_HI", "BMS_CURRENT_mA_LO"],
   BMS_FAULT_FLAGS: ["BMS_FAULT_FLAGS_HI", "BMS_FAULT_FLAGS_LO"],
@@ -283,7 +140,6 @@ const DERIVED_REGS = {
 };
 let ICD = null;
 let HOLDING_BY_ADDR = {};
-let simState = null;
 
 async function getJson(url) {
   const r = await fetch(url);
@@ -349,120 +205,9 @@ function reasonTip(name) {
   return `${name}: ${ICD.reasons[name]}`;
 }
 
-function regNames(regs) {
-  if (regs === undefined) {
-    return [];
-  }
-  if (typeof regs === "string") {
-    return DERIVED_REGS[regs] || [regs];
-  }
-  return regs;
-}
-
-function forceMap() {
-  if (simState === null || !simState.force) {
-    return {};
-  }
-  return simState.force;
-}
-
 function rows(id, pairs) {
-  setHtml(id, pairs.map(p => {
-    const names = regNames(p[2]).join(",");
-    const isForced = regNames(p[2]).some(n => forceMap()[n] !== undefined);
-    let cls = "";
-    let mark = "";
-    if (isForced) {
-      cls = " class=\"forced\"";
-      mark = ` <span class="force-x" data-regs="${names}" title="강제 해제">✕</span>`;
-    }
-    return `<tr${cls} title="${escapeAttr(tip(p[2], p[3]))}"><td>${p[0]}</td><td class="val" data-regs="${names}">${p[1]}${mark}</td></tr>`;
-  }).join(""));
+  setHtml(id, pairs.map(p => `<tr title="${escapeAttr(tip(p[2], p[3]))}"><td>${p[0]}</td><td>${p[1]}</td></tr>`).join(""));
 }
-
-// 값 칸을 눌러 그 행의 레지스터를 직접 고친다 (MCU 시뮬의 값을 강제로 고정)
-let lastRegs = {};
-let isEditing = false;
-
-function openEditor(cell) {
-  const names = (cell.dataset.regs || "").split(",").filter(n => n !== "" && lastRegs[n] !== undefined);
-  if (names.length === 0) {
-    return;
-  }
-  isEditing = true;
-  showEditBadge();
-  cell.innerHTML = `<span class="val-edit">`
-    + names.map(n => `${n} <input type="number" data-reg="${n}" value="${lastRegs[n]}"> `).join("")
-    + `<button class="val-ok">적용</button> <button class="val-no">취소</button></span>`;
-  const first = cell.querySelector("input");
-  first.focus();
-  first.select();
-}
-
-function closeEditor() {
-  isEditing = false;
-  showEditBadge();
-}
-
-function showEditBadge() {
-  let badge = byId("edit_badge");
-  if (badge === null) {
-    badge = document.createElement("span");
-    badge.id = "edit_badge";
-    badge.className = "err";
-    document.querySelector("header").appendChild(badge);
-  }
-  let text = "";
-  if (isEditing) {
-    text = "편집 중 — 화면 갱신 멈춤 (Esc 로 취소)";
-  }
-  badge.textContent = text;
-}
-
-document.addEventListener("click", e => {
-  const isOutside = isEditing && e.target.closest(".val-edit") === null;
-  if (isOutside) {
-    closeEditor();
-  }
-  const x = e.target.closest(".force-x");
-  if (x) {
-    const body = {};
-    x.dataset.regs.split(",").forEach(n => { body[n] = null; });
-    postJson(SIM + "/api/force", body);
-    return;
-  }
-  if (e.target.classList.contains("val-ok")) {
-    const body = {};
-    e.target.closest(".val-edit").querySelectorAll("input").forEach(i => {
-      body[i.dataset.reg] = parseInt(i.value);
-    });
-    postJson(SIM + "/api/force", body);
-    closeEditor();
-    return;
-  }
-  if (e.target.classList.contains("val-no")) {
-    closeEditor();
-    return;
-  }
-  const cell = e.target.closest("td.val");
-  if (cell && !isEditing) {
-    openEditor(cell);
-  }
-});
-document.addEventListener("keydown", e => {
-  if (!isEditing) {
-    return;
-  }
-  if (e.key === "Escape") {
-    closeEditor();
-  }
-  if (e.key === "Enter") {
-    const ok = document.querySelector(".val-ok");
-    if (ok) {
-      ok.click();
-    }
-  }
-});
 
 function chips(list, all, badSet) {
   return all.map(name => {
@@ -728,7 +473,6 @@ function applyStaticTitles() {
 
 function renderMaster(s) {
   const r = s.regs;
-  lastRegs = r;
   const d = s.decoded;
   const st = s.link.stats;
   setText("link", `${s.link.port}  ok ${st.ok} / timeout ${st.timeout} / exception ${st.exception}  |  상태 age ${s.link.status_age}s  |  HB_SEQ ${s.link.hb_seq}`);
@@ -795,217 +539,6 @@ function renderMaster(s) {
   refreshSettings(s.holding);
 }
 
-function renderStation(s) {
-  const n = s.internal;
-  const inj = s.inject;
-  const is_cover_motion = n.active !== null && n.active.name.startsWith("COVER");
-  const is_slide_motion = n.active !== null && n.active.name.startsWith("SLIDE");
-  const angle = n.cover_pos * 90;
-  byId("door_front").style.transform = `rotate(${angle}deg)`;
-  byId("door_side").style.transform = `scaleY(${Math.max(0.05, Math.cos(angle * Math.PI / 180))})`;
-  byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
-  setClass("door_front", "moving", is_cover_motion);
-  setClass("door_side", "moving", is_cover_motion);
-  setClass("platform_rect", "moving", is_slide_motion);
-  setClass("drone", "hide", !inj.drone_detected);
-  setClass("pad1", "on", n.chg_on);
-  setClass("pad2", "on", n.chg_on);
-  setClass("bolt", "hide", !n.chg_on);
-  let chgText = "충전 " + n.chg_state;
-  if (n.chg_on) {
-    chgText += ` ${n.chg_volt.toFixed(2)} V / ${n.chg_amp.toFixed(2)} A`;
-  }
-  if (n.chg_fault !== "none") {
-    chgText += " (" + n.chg_fault + ")";
-  }
-  setText("chg_text", chgText);
-  byId("led").setAttribute("class", "led p" + n.led_pattern);
-  setClass("lamp_in", "on", (n.light & 1) !== 0);
-  setClass("lamp_out", "on", (n.light & 2) !== 0);
-  setClass("interior", "lit", (n.light & 1) !== 0);
-  const is_buzzer = (n.alarm & 1) !== 0;
-  setClass("buzzer", "dim", !is_buzzer);
-  setClass("buzzer", "blink", is_buzzer);
-  const is_indicator = (n.alarm & 2) !== 0;
-  let indicatorFill = "#444";
-  if (is_indicator) {
-    indicatorFill = "#ff5252";
-  }
-  byId("indicator").setAttribute("fill", indicatorFill);
-  setClass("indicator", "blink", is_indicator);
-  setClass("heater", "dim", (n.climate_out & 1) === 0);
-  setClass("cooler", "dim", (n.climate_out & 2) === 0);
-  setClass("fan", "dim", (n.climate_out & 4) === 0);
-  setClass("fan", "spin", (n.climate_out & 4) !== 0);
-  setClass("estop_btn", "on", inj.estop);
-  INJECT_PULSES.forEach(k => setClass(k, "on", inj[k]));
-  setClass("flood", "hide", !inj.flood);
-  setText("env_text", `내부 ${inj.temp_in.toFixed(1)} ℃ / ${inj.hum_in.toFixed(0)} %   접점 ${inj.contact_temp.toFixed(1)} ℃`);
-  let maintText = "";
-  if (n.maint_active === 1) {
-    maintText = `정비 모드 (${n.maint_source})`;
-  }
-  setText("maint_text", maintText);
-  let hbText = "HB age " + n.hb_age + " s";
-  if (n.hb_timeout) {
-    hbText += "  (타임아웃)";
-  }
-  setText("hb_text", hbText);
-  let banner = "";
-  let bannerColor = "#ef6c00";
-  if (n.safe_hold) {
-    banner = "SAFE-HOLD";
-  }
-  if (n.fault !== "OK") {
-    banner = "FAULT " + n.fault;
-    bannerColor = "#d32f2f";
-  }
-  setText("banner", banner);
-  byId("banner").setAttribute("fill", bannerColor);
-  let status = `커버 ${n.cover_state} · 슬라이드 ${n.slide_state} · LED ${LED_NAMES[n.led_pattern]}`;
-  if (n.active !== null) {
-    status += ` · ${n.active.name}`;
-    if (n.active.local) {
-      status += " (현장 버튼)";
-    } else {
-      status += ` ${n.progress}%`;
-    }
-  }
-  setText("status_line", status);
-}
-
-function bindInject(root) {
-  root.querySelectorAll("input[data-key]").forEach(el => el.addEventListener("change", () => {
-    let value = parseFloat(el.value);
-    const is_checkbox = el.type === "checkbox";
-    if (is_checkbox) {
-      value = el.checked;
-    }
-    postJson(SIM + "/api/inject", { [el.dataset.key]: value });
-  }));
-  root.querySelectorAll("button[data-key]").forEach(el => el.addEventListener("click", () => {
-    postJson(SIM + "/api/inject", { [el.dataset.key]: true });
-  }));
-}
-
-function refreshInject(root, inj) {
-  root.querySelectorAll("input[data-key]").forEach(el => {
-    const is_editing = el === document.activeElement;
-    if (is_editing) {
-      return;
-    }
-    const is_checkbox = el.type === "checkbox";
-    if (is_checkbox) {
-      el.checked = inj[el.dataset.key];
-    } else {
-      el.value = inj[el.dataset.key];
-    }
-  });
-}
-
-function renderSim(s) {
-  simState = s;
-  const inj = s.inject;
-  const n = s.internal;
-  const box = byId("inject");
-  if (box.children.length === 0) {
-    const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
-    const pulseHtml = INJECT_PULSES.map(k => `<button data-key="${k}">${k} 누름</button>`).join("");
-    const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
-    box.innerHTML = boolHtml + "<br>" + pulseHtml + "<br>" + numHtml;
-    bindInject(box);
-  }
-  refreshInject(document, inj);
-  let active = "-";
-  if (n.active) {
-    active = `#${n.active.seq} ${n.active.name}`;
-  }
-  rows("sim_tbl", [
-    ["sim time", n.time + " s"],
-    ["cover / slide", `${n.cover_pos} / ${n.slide_pos}`],
-    ["active", active],
-    ["safe_hold / fault", `${n.safe_hold} / ${n.fault}`],
-    ["hb_timeout / hb_age", `${n.hb_timeout} / ${n.hb_age}s`],
-    ["chg_on / bms_pwr", `${n.chg_on} / ${n.bms_pwr}`],
-    ["maint", `${n.maint_active} / ${n.maint_source}`],
-    ["last_cmd_seq", n.last_cmd_seq],
-  ]);
-  renderForce(s.force || {});
-  setText("sim_log", s.log.slice().reverse().join("\n"));
-  renderStation(s);
-}
-
-// 강제값: 시뮬 계산을 덮어써 어떤 입력 레지스터든 임의 값으로 고정한다
-function renderForce(force) {
-  const list = byId("force_list");
-  const keys = Object.keys(force);
-  if (keys.length === 0) {
-    list.innerHTML = "<span class='rx-head'>강제 중인 레지스터 없음 (칩을 누르면 해제)</span>";
-  } else {
-    list.innerHTML = keys.map(k => `<span class="force-chip" data-key="${k}">${k} = ${force[k]} ✕</span>`).join("");
-  }
-  // 이름 자동완성은 마스터가 읽어 온 레지스터 목록에서 (renderMaster 가 채운다)
-}
-
-byId("force_clear").addEventListener("click", () => postJson(SIM + "/api/force", {}));
-byId("force_list").addEventListener("click", e => {
-  const chip = e.target.closest(".force-chip");
-  if (chip) {
-    postJson(SIM + "/api/force", { [chip.dataset.key]: null });
-  }
-});
-
-// 실행 모드: 어떤 시리얼 포트에 무엇을 붙일지 화면에서 고른다 (적용하면 서비스가 재기동된다)
-function loadPorts() {
-  getJson("/api/ports").then(p => {
-    const sel = byId("rm_port");
-    const opts = ["<option value=''>가상 (pty 자동 생성)</option>"]
-      .concat(p.ports.map(x => `<option value="${x}">${x}</option>`));
-    sel.innerHTML = opts.join("");
-    sel.value = p.port || "";
-    byId("rm_mode").value = p.mode || "both";
-  }).catch(() => {});
-}
-
-byId("rm_apply").addEventListener("click", () => {
-  const port = byId("rm_port").value;
-  const mode = byId("rm_mode").value;
-  if (port === "" && mode !== "both") {
-    setText("rm_msg", "실물 포트를 골라야 한다");
-    return;
-  }
-  setText("rm_msg", "재기동 중…");
-  postJson("/api/runmode", { port: port, mode: mode });
-  let msg = "가상 UART 로 재기동";
-  if (port !== "") {
-    msg = port + " 로 재기동";
-  }
-  setTimeout(() => setText("rm_msg", msg), 1500);
-});
-loadPorts();
-setInterval(loadPorts, 5000);
-
-// 응답 조작: 슬레이브가 마스터에 영향을 줄 수 있는 유일한 수단 (값·예외·지연)
-byId("rc_exc_go").addEventListener("click", () => {
-  const n = parseInt(byId("rc_exc_n").value);
-  postJson(SIM + "/api/inject", { exc_code: parseInt(byId("rc_exc").value), exc_n: n });
-  setText("rc_msg", `다음 ${n} 회 예외 응답`);
-});
-byId("rc_crc_go").addEventListener("click", () => {
-  const n = parseInt(byId("rc_crc_n").value);
-  postJson(SIM + "/api/inject", { bad_crc_n: n });
-  setText("rc_msg", `다음 ${n} 회 CRC 깨서 응답`);
-});
-byId("rc_delay_go").addEventListener("click", () => {
-  const ms = parseInt(byId("rc_delay").value);
-  postJson(SIM + "/api/inject", { resp_delay_ms: ms });
-  let msg = "응답 지연 해제";
-  if (ms > 0) {
-    msg = `응답 ${ms} ms 지연 — ICD 대기는 100 ms`;
-  }
-  setText("rc_msg", msg);
-});
-
 function numberOf(id) {
   return parseInt(byId(id).value);
 }
@@ -1044,14 +577,6 @@ document.querySelectorAll("#set_tbl select, #set_tbl input[type=number]").forEac
   postJson("/api/write", { addr: parseInt(el.dataset.addr), value: parseInt(el.value) });
 }));
 document.querySelectorAll("#set_tbl input.bit").forEach(el => el.addEventListener("change", () => writeBits(el.dataset.addr)));
-bindInject(document.querySelector(".station-bar"));
-byId("estop_btn").addEventListener("click", () => {
-  if (simState === null) {
-    return;
-  }
-  postJson(SIM + "/api/inject", { estop: !simState.inject.estop });
-});
-INJECT_PULSES.forEach(k => byId(k).addEventListener("click", () => postJson(SIM + "/api/inject", { [k]: true })));
 getJson("/api/icd").then(info => {
   ICD = info;
   Object.keys(info.holding).forEach(name => {
@@ -1098,19 +623,10 @@ function isSelectingText() {
 }
 
 setInterval(() => {
-  if (isSelectingText() || isEditing) {
+  if (isSelectingText()) {
     return;
   }
   getJson("/api/state").then(renderMaster).catch(() => setText("linkerr", "sm_master 연결 실패"));
-}, 200);
-setInterval(() => {
-  if (isSelectingText() || isRxOnly || isEditing) {
-    return;
-  }
-  getJson(SIM + "/api/state").then(s => {
-    renderSim(s);
-    setText("sim_err", "");
-  }).catch(() => setText("sim_err", "(mcu_sim :8881 없음)"));
 }, 200);
 </script>
 </body>
