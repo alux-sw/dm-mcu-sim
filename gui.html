@@ -263,7 +263,8 @@
   </section>
 </main>
 <script>
-const SIM = location.protocol + "//" + location.hostname + ":8881";
+const kSimPort = "8881";
+const SIM = simBase(new URLSearchParams(location.search).get("sim"));
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
 const MCU_STATUS_BITS = ["estop", "safe_hold", "fault", "hb_timeout", "sd_ok", "bms_link", "drone_detected", "motion_active"];
 const MCU_STATUS_BAD = ["estop", "safe_hold", "fault", "hb_timeout"];
@@ -284,6 +285,18 @@ const DERIVED_REGS = {
 let ICD = null;
 let HOLDING_BY_ADDR = {};
 let simState = null;
+
+// mcu_sim 주소. 기본은 GUI 를 연 호스트의 :8881, 다른 기계에 있으면 ?sim=호스트[:포트]
+function simBase(param) {
+  if (!param) {
+    return location.protocol + "//" + location.hostname + ":" + kSimPort;
+  }
+  const url = new URL(param.includes("://") ? param : location.protocol + "//" + param);
+  if (url.port === "") {
+    url.port = kSimPort;
+  }
+  return url.origin;
+}
 
 async function getJson(url) {
   const r = await fetch(url);
@@ -1110,7 +1123,7 @@ setInterval(() => {
   getJson(SIM + "/api/state").then(s => {
     renderSim(s);
     setText("sim_err", "");
-  }).catch(() => setText("sim_err", "(mcu_sim :8881 없음)"));
+  }).catch(() => setText("sim_err", "(mcu_sim " + SIM + " 없음)"));
 }, 200);
 </script>
 </body>

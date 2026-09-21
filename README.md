@@ -39,6 +39,13 @@ python3 sm_master.py /dev/ttyTHS1      # Orin
 python3 mcu_sim.py /dev/ttyUSB0        # MCU 대신 PC
 ```
 
+GUI 는 mcu_sim 이 GUI 를 연 호스트의 :8881 에 있다고 본다. 둘이 다른 기계면 `?sim=호스트[:포트]` 로 알려준다 (포트 생략 시 8881):
+
+```
+http://<Orin>:8880/?sim=localhost            # mcu_sim 이 브라우저를 띄운 PC(WSL 포함)에서 돌 때
+http://<Orin>:8880/?sim=192.168.1.10:8881    # 다른 기계에서 돌 때
+```
+
 점검:
 
 ```
