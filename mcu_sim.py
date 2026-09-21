@@ -44,6 +44,22 @@ kInjectDefaults = {
 }
 
 
+kInputByName = {name: addr for addr, name in icd.INPUT_NAMES.items()}
+
+
+def force_addr(key):
+    """레지스터 이름이나 0xNN / 십진 주소를 입력 레지스터 주소로"""
+    if key in kInputByName:
+        return kInputByName[key]
+    try:
+        addr = int(key, 0)
+    except (TypeError, ValueError):
+        return None
+    if 0 <= addr < icd.INPUT_COUNT:
+        return addr
+    return None
+
+
 def u16(value):
     return value & 0xFFFF
 
@@ -61,6 +77,7 @@ class Mcu:
         self.lock = threading.Lock()
         self.log = collections.deque(maxlen=kLogLen)
         self.inject = dict(kInjectDefaults)
+        self.force = {}                              # 입력 레지스터 강제값 {주소: 값}. 시뮬 계산을 덮어쓴다
         self.now = 0.0
         self.holding = {addr: 0 for addr in icd.HOLDING_NAMES}
         self.inputs = [0] * icd.INPUT_COUNT
@@ -358,6 +375,11 @@ class Mcu:
         self.tick_motion()
         self.tick_charger()
         self.fill_inputs()
+        self.apply_force()
+
+    def apply_force(self):
+        for addr, value in self.force.items():
+            self.inputs[addr] = value
 
     def run_timers(self):
         due = [t for t in self.timers if t[0] <= self.now]
@@ -632,6 +654,7 @@ class Mcu:
                           "local": self.active["seq"] == 0}
             return {
                 "inject": dict(self.inject),
+                "force": {icd.INPUT_NAMES.get(a, hex(a)): v for a, v in self.force.items()},
                 "internal": {
                     "time": round(self.now, 1),
                     "cover_pos": round(self.cover_pos, 2),
@@ -661,6 +684,24 @@ class Mcu:
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
                 "log": list(self.log),
             }
+
+    def set_force(self, body):
+        """{"BUS24_V": 2350, "CHG_STATE": null} — 이름이나 0xNN 주소. null 은 해제, 빈 본문은 전체 해제"""
+        with self.lock:
+            if not body:
+                self.force.clear()
+                self.note("force 전체 해제")
+            for key, value in body.items():
+                addr = force_addr(key)
+                if addr is None:
+                    continue
+                if value is None:
+                    self.force.pop(addr, None)
+                    self.note("force %s 해제" % icd.INPUT_NAMES.get(addr, hex(addr)))
+                else:
+                    self.force[addr] = u16(int(value))
+                    self.note("force %s=%d" % (icd.INPUT_NAMES.get(addr, hex(addr)), self.force[addr]))
+        return self.snapshot()
 
     def set_inject(self, body):
         with self.lock:
@@ -697,6 +738,7 @@ def main():
     webapi.serve(kHttpPort, {
         ("GET", "/api/state"): lambda body: mcu.snapshot(),
         ("POST", "/api/inject"): mcu.set_inject,
+        ("POST", "/api/force"): mcu.set_force,
     })
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
     next_at = time.monotonic()
