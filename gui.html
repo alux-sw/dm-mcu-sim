@@ -41,6 +41,7 @@
   .rx-sec { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 4px 3px 6px; border-left: 3px solid var(--sec, #666); background: #202124; border-radius: 3px; }
   #rx_section { --rxf: 15px; }                 /* RX 바이트 글자 크기 — 이 한 줄로 패널 전체가 커진다 */
   body.rx-only #rx_section { --rxf: 20px; }    /* 새 창은 더 크게 */
+  body.hide-rsv .rx-grp.rsv { display: none; }  /* 예약(미할당) 주소 숨기기 */
   .rx-sec > b { width: 100%; font-size: calc(var(--rxf) * 0.7); font-weight: normal; color: var(--sec, #888); }
   .rx-grp { display: inline-flex; flex-direction: column; align-items: center; }
   .rx-grp > b { font-size: calc(var(--rxf) * 0.62); font-weight: normal; color: #9ab; white-space: nowrap; }
@@ -253,7 +254,7 @@
     <pre id="sim_log"></pre>
   </section>
   <section class="wide" id="rx_section">
-    <h2>마지막 RX (요청별 고정, 노란색 = 직전 표시 대비 바뀐 바이트) <button id="rx_popout">새 창</button></h2>
+    <h2>마지막 RX (요청별 고정, 노란색 = 직전 표시 대비 바뀐 바이트) <button id="rx_rsv">예약 숨기기</button> <button id="rx_popout">새 창</button></h2>
     <div id="rx_panel"></div>
   </section>
   <section class="wide">
@@ -573,7 +574,7 @@ function rxGroup(label, cellsHtml, isDim) {
   if (isDim) {
     cls = "dim";
   }
-  return `<div class="rx-grp"><b class="${cls}">${label}</b><div>${cellsHtml}</div></div>`;
+  return `<div class="rx-grp ${isDim ? "rsv" : ""}"><b class="${cls}">${label}</b><div>${cellsHtml}</div></div>`;
 }
 
 function rxSectionHtml(label, color, groupsHtml) {
@@ -1063,6 +1064,15 @@ getJson("/api/icd").then(info => {
 });
 
 // #rx 로 열면 RX 패널만 보이는 창이 된다 (해시라 서버는 같은 '/' 를 내보냄)
+const rsvBtn = byId("rx_rsv");
+const setRsv = hide => {
+  document.body.classList.toggle("hide-rsv", hide);
+  rsvBtn.textContent = hide ? "예약 보기" : "예약 숨기기";
+  localStorage.setItem("hideRsv", hide ? "1" : "");
+};
+rsvBtn.addEventListener("click", () => setRsv(!document.body.classList.contains("hide-rsv")));
+setRsv(localStorage.getItem("hideRsv") === "1");
+
 const isRxOnly = location.hash === "#rx";
 document.body.classList.toggle("rx-only", isRxOnly);
 byId("rx_popout").addEventListener("click", () => {
