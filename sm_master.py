@@ -206,15 +206,6 @@ class Sm:
         self.jobs.put(("write", int(body["addr"]), int(body["value"])))
         return {"ok": True}
 
-    def icd_info(self, body):
-        """툴팁용 ICD 설명: 이름 → [주소, 설명]"""
-        return {
-            "inputs": {name: [addr, icd.INPUT_DESC.get(addr, "")] for addr, name in icd.INPUT_NAMES.items()},
-            "holding": {name: [addr, icd.HOLDING_DESC.get(addr, "")] for addr, name in icd.HOLDING_NAMES.items()},
-            "cmds": {code: [name, icd.CMD_DESC.get(code, "")] for code, name in icd.CMD_NAMES.items()},
-            "reasons": {name: icd.REASON_DESC.get(code, "") for code, name in icd.REASON_NAMES.items()},
-        }
-
     def snapshot(self, body):
         with self.lock:
             r = list(self.regs)
@@ -278,7 +269,7 @@ def main():
     sm = Sm(fd, port)
     webapi.serve(kHttpPort, {
         ("GET", "/api/state"): sm.snapshot,
-        ("GET", "/api/icd"): sm.icd_info,
+        ("GET", "/api/icd"): lambda body: icd.describe(),
         ("POST", "/api/cmd"): sm.send_command,
         ("POST", "/api/write"): sm.write_setting,
     }, html_path=kGuiFile)

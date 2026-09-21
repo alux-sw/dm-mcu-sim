@@ -1,5 +1,5 @@
 #!/bin/bash
-# SM 마스터와 MCU 시뮬레이터를 띄운다 (GUI: http://localhost:8880)
+# SM 마스터와 MCU 시뮬레이터를 띄운다 (화면: 마스터 http://localhost:8880, 시뮬레이터 :8881)
 #
 #   ./run_sim.sh                        가상 UART 쌍 위에 둘 다 (기본)
 #   ./run_sim.sh --port /dev/ttyUSB0    실물 포트에 SM 마스터만 — 상대는 벤더 MCU

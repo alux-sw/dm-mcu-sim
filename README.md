@@ -6,7 +6,8 @@ ICD-XS-SM-MCU v1.1 (Station Manager ↔ 스테이션 MCU, Modbus RTU) 프로토�
 |---|---|
 | `sm_master.py` | SM 쪽 Modbus 마스터. 상태 10 Hz·BMS 1/0.2 Hz·식별 1회·하트비트 1 Hz 폴링, 명령·설정 쓰기, 시작 시 보유 레지스터 0x03 동기화, HTTP :8880 |
 | `mcu_sim.py` | MCU 쪽 Modbus 슬레이브 시뮬레이터. 레지스터 맵·명령 접수/거부·HI-1~6·SAFE-HOLD/FAULT·하트비트·현장 버튼·정비 모드·BMS 미러, HTTP :8881 |
-| `gui.html` | 디버그 GUI. 스테이션 애니메이션(GDU K03 식: 정면 도어가 아래로 젖혀지고 착륙판이 정면으로 슬라이드), 레지스터 표, 명령·설정·주입, 요청 종류별 마지막 RX 바이트 표(바뀐 바이트 노란색 깜빡임). 값에 마우스를 올리면 ICD 설명 툴팁. sm_master 가 `/` 로 내보냄 |
+| `gui.html` | 마스터 화면. 레지스터 표, 명령·설정, 요청 종류별 마지막 RX 바이트 표(바뀐 바이트 노란색 깜빡임), 프레임 로그. 값에 마우스를 올리면 ICD 설명 툴팁. sm_master 가 `/` 로 내보냄 |
+| `sim.html` | 시뮬레이터 화면. 스테이션 애니메이션(GDU K03 식: 정면 도어가 아래로 젖혀지고 착륙판이 정면으로 슬라이드), 주입·응답 조작, 입력 레지스터 표(값을 눌러 강제값 고정). mcu_sim 이 `/` 로 내보냄 |
 | `icd.py` | 레지스터 주소·명령·거부 코드·설명 |
 | `modbus_rtu.py` | CRC16·프레임 조립/해석·시리얼(termios) |
 | `webapi.py` | JSON HTTP 서버 |
@@ -24,7 +25,7 @@ Python 3 표준 라이브러리만 사용 (Linux).
 ./run_sim.sh
 ```
 
-브라우저에서 `http://<호스트>:8880`.
+브라우저에서 마스터 화면 `http://<호스트>:8880`, 시뮬레이터 화면 `http://<호스트>:8881`.
 
 ssh 로 들어가 세션이 끊겨도 남게 띄우려면:
 
@@ -39,11 +40,11 @@ python3 sm_master.py /dev/ttyTHS1      # Orin
 python3 mcu_sim.py /dev/ttyUSB0        # MCU 대신 PC
 ```
 
-GUI 는 mcu_sim 이 GUI 를 연 호스트의 :8881 에 있다고 본다. 둘이 다른 기계면 `?sim=호스트[:포트]` 로 알려준다 (포트 생략 시 8881):
+화면은 둘로 나뉜다. 마스터 화면은 UART 로 읽은 값만 쓰므로 상대가 실물 MCU 여도 그대로 쓴다:
 
 ```
-http://<Orin>:8880/?sim=localhost            # mcu_sim 이 브라우저를 띄운 PC(WSL 포함)에서 돌 때
-http://<Orin>:8880/?sim=192.168.1.10:8881    # 다른 기계에서 돌 때
+http://<sm_master 가 도는 기계>:8880    # 마스터: 레지스터 표·명령·설정·RX·프레임
+http://<mcu_sim 이 도는 기계>:8881      # 시뮬레이터: 스테이션 애니메이션·주입·응답 조작·강제값·입력 레지스터
 ```
 
 점검:
@@ -63,12 +64,13 @@ sm_master (:8880)
 
 mcu_sim (:8881)
 
-- `GET /api/state` — 주입값·내부 상태(위치·충전·LED·정비 모드 등 애니메이션용)·로그
+- `GET /api/state` — 주입값·내부 상태(위치·충전·LED·정비 모드 등 애니메이션용)·입력 레지스터 값(`regs`, 강제값 반영)·로그
+- `GET /api/icd` — sm_master 와 같음
 - `POST /api/inject` `{"estop":true,"contact_temp":65}` — estop / ac_ok / flood / drone_detected / bms_link / overcurrent(HI-4) / limit_conflict / mute(응답 끊기) / btn_door·btn_slide·btn_maint(현장 버튼, 0.5 초 뒤 자동 해제) / contact_temp / temp_in / hum_in / cover_sec·slide_sec(모션 소요 시간) / motion_timeout_sec(모션 제한 시간)
 
 ## 시뮬레이터 가정
 
-- 커버 3 초, 슬라이드 4 초에 리미트 도달 (GUI 상단에서 조절). 정면·측면 도어는 한 명령으로 같이 움직임
+- 커버 3 초, 슬라이드 4 초에 리미트 도달 (시뮬레이터 화면 상단에서 조절). 정면·측면 도어는 한 명령으로 같이 움직임
 - 모션 제한 시간 30 초, 접점 온도 상한 60 ℃, 하트비트 타임아웃 3 초 (ICD 상 MCU 상수)
 - SLIDE_LIMITS bit2 하중/근접 센서 = 드론 감지와 동일
 - 충전 ON 은 드론 감지가 없으면 통전 없음(CHG_FAULT 3, DONE HW_ERROR). 충전기 기본 상한 10 A, 출력 50.4 V / 5 A
