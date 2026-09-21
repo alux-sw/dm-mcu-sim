@@ -225,6 +225,14 @@
   <section>
     <h2>MCU 시뮬레이터 주입 <span id="sim_err" class="err"></span></h2>
     <div id="inject"></div>
+    <div id="resp_box">
+      응답 조작 —
+      예외 <select id="rc_exc"><option value="2">0x02 주소</option><option value="3">0x03 값</option><option value="4">0x04 장치오류</option></select>
+      <input id="rc_exc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_exc_go">보냄</button>
+      · CRC 깨기 <input id="rc_crc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_crc_go">보냄</button>
+      · 지연 <input id="rc_delay" type="number" value="0" min="0" step="10" size="4"> ms <button id="rc_delay_go">적용</button>
+      <span id="rc_msg" class="rx-head"></span>
+    </div>
     <div id="force_box">
       레지스터 강제 (오른쪽 표의 값을 눌러 고친다) <button id="force_clear">전체 해제</button>
       <div id="force_list"></div>
@@ -938,6 +946,25 @@ byId("force_list").addEventListener("click", e => {
 });
 
 // 실행 모드: 어떤 시리얼 포트에 무엇을 붙일지 화면에서 고른다 (적용하면 서비스가 재기동된다)
+byId("rc_exc_go").addEventListener("click", () => {
+  const n = parseInt(byId("rc_exc_n").value);
+  postJson(SIM + "/api/inject", { exc_code: parseInt(byId("rc_exc").value), exc_n: n });
+  setText("rc_msg", `다음 ${n} 회 예외 응답`);
+});
+byId("rc_crc_go").addEventListener("click", () => {
+  const n = parseInt(byId("rc_crc_n").value);
+  postJson(SIM + "/api/inject", { bad_crc_n: n });
+  setText("rc_msg", `다음 ${n} 회 CRC 깨서 응답`);
+});
+byId("rc_delay_go").addEventListener("click", () => {
+  const ms = parseInt(byId("rc_delay").value);
+  postJson(SIM + "/api/inject", { resp_delay_ms: ms });
+  let msg = "응답 지연 해제";
+  if (ms > 0) {
+    msg = `응답 ${ms} ms 지연 — ICD 대기는 100 ms`;
+  }
+  setText("rc_msg", msg);
+});
 
 function numberOf(id) {
   return parseInt(byId(id).value);
