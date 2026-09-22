@@ -1,4 +1,4 @@
-"""시리얼 없이 Mcu 클래스에 프레임을 직접 넣어 명령·인터락·현장 버튼·하트비트를 점검한다 (python3 test_sim.py)"""
+"""시리얼 없이 Mcu 클래스에 프레임을 직접 넣어 명령·인터락·현장 버튼·하트비트를 점검합니다 (python3 test_sim.py)"""
 import icd
 import mcu_sim
 import modbus_rtu as mb

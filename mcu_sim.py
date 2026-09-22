@@ -1,4 +1,4 @@
-"""MCU 슬레이브 시뮬레이터: ICD-XS-SM-MCU v1.1 레지스터 맵·명령·인터락·현장 버튼을 흉내 낸다"""
+"""MCU 슬레이브 시뮬레이터: 레지스터 맵·명령·인터락·현장 버튼"""
 import collections
 import os
 import sys
@@ -43,8 +43,8 @@ kInjectDefaults = {
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
     "cover_sec": kCoverMoveSec, "slide_sec": kSlideMoveSec, "motion_timeout_sec": kMotionTimeoutSec,
     "exc_code": 0, "exc_n": 0,          # 다음 n 회 응답을 예외로 (2 주소, 3 값, 4 장치오류)
-    "bad_crc_n": 0,                     # 다음 n 회 응답의 CRC 를 깨서 보낸다
-    "resp_delay_ms": 0,                 # 응답을 이만큼 늦춘다 (ICD 응답 대기 100ms)
+    "bad_crc_n": 0,                     # 다음 n 회 응답의 CRC 를 깨서 보냅니다
+    "resp_delay_ms": 0,                 # 응답을 이만큼 늦춥니다 (ICD 응답 대기 100ms)
 }
 
 
@@ -81,7 +81,7 @@ class Mcu:
         self.lock = threading.Lock()
         self.log = collections.deque(maxlen=kLogLen)
         self.inject = dict(kInjectDefaults)
-        self.force = {}                              # 입력 레지스터 강제값 {주소: 값}. 시뮬 계산을 덮어쓴다
+        self.force = {}                              # 입력 레지스터 강제값 {주소: 값}. 시뮬 계산보다 우선합니다
         self.now = 0.0
         self.holding = {addr: 0 for addr in icd.HOLDING_NAMES}
         self.inputs = [0] * icd.INPUT_COUNT
@@ -110,7 +110,6 @@ class Mcu:
         self.log.append(line)
         print(line, flush=True)
 
-    # --- Modbus ---
     def on_rx(self):
         self.last_rx = self.now
         if self.hb_timeout:
@@ -118,7 +117,6 @@ class Mcu:
             self.note("heartbeat restored")
 
     def handle(self, frame):
-        """요청 프레임 → 응답 프레임"""
         fc = frame[1]
         addr = (frame[2] << 8) | frame[3]
         if fc == mb.FC_READ_INPUT:
@@ -174,7 +172,6 @@ class Mcu:
             self.maint_source = source
         self.note("maint mode %d (%s)" % (on, icd.MAINT_SOURCE_NAMES[self.maint_source]))
 
-    # --- 명령 ---
     def on_command(self):
         seq = self.holding[icd.CMD_SEQ]
         code = self.holding[icd.CMD_CODE]
@@ -338,7 +335,6 @@ class Mcu:
         self.abort_motion(4)
         self.note("FAULT latched %s" % icd.REASON_NAMES.get(code, hex(code)))
 
-    # --- 현장 버튼 ---
     def on_button(self, key):
         if key == "btn_maint":
             self.set_maint(1 - self.maint_active, 2)
@@ -369,7 +365,6 @@ class Mcu:
                 self.inject[key] = False
                 del self.btn_release_at[key]
 
-    # --- 주기 처리 ---
     def tick(self):
         self.now += kTickSec
         self.run_timers()
@@ -649,7 +644,6 @@ class Mcu:
         inp[icd.BMS_FW_VERSION] = 0x0102
         inp[icd.BMS_HW_VERSION] = 0x0001
 
-    # --- HTTP ---
     def snapshot(self):
         with self.lock:
             active = None
@@ -691,14 +685,13 @@ class Mcu:
             }
 
     def signed_input(self, addr):
-        """마스터 화면과 같게 부호 있는 레지스터는 음수로 보인다"""
         value = self.inputs[addr]
         if addr in icd.SIGNED_INPUTS and value >= 0x8000:
             value -= 0x10000
         return value
 
     def response_policy(self, fc, resp):
-        """예외 강제·CRC 깨기·지연을 적용한 응답과 지연 시간을 돌려준다"""
+        """예외 강제·CRC 깨기·지연을 적용한 응답과 지연 시간을 돌려줍니다"""
         inj = self.inject
         is_exception = inj["exc_n"] > 0 and inj["exc_code"] != 0
         if is_exception:
@@ -712,7 +705,7 @@ class Mcu:
         return resp, inj["resp_delay_ms"] / 1000.0
 
     def set_force(self, body):
-        """{"BUS24_V": 2350, "CHG_STATE": null} — 이름이나 0xNN 주소. null 은 해제, 빈 본문은 전체 해제"""
+        """본문 예: {"BUS24_V": 2350, "CHG_STATE": null}. 키는 이름이나 0xNN 주소이고, null 은 해제, 빈 본문은 전체 해제입니다"""
         with self.lock:
             if not body:
                 self.force.clear()

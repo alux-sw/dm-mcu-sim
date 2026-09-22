@@ -265,7 +265,7 @@ function rows(id, pairs) {
   setHtml(id, pairs.map(rowHtml).join(""));
 }
 
-// 입력 레지스터 전부 (마스터가 읽어 가는 값, 강제값 반영). 값을 누르면 강제로 고정한다
+// 입력 레지스터 전체 (마스터가 읽어 가는 값, 강제값 반영)
 function renderRegs(regs) {
   if (ICD === null) {
     return;
@@ -292,7 +292,7 @@ function renderRegs(regs) {
   setHtml("reg_tbl", html);
 }
 
-// 값 칸을 눌러 그 행의 레지스터를 직접 고친다 (MCU 시뮬의 값을 강제로 고정)
+// 값 칸을 누르면 그 행의 레지스터 값을 강제로 고정합니다
 let lastRegs = {};
 let isEditing = false;
 
@@ -517,7 +517,6 @@ function renderSim(s) {
   renderStation(s);
 }
 
-// 강제값: 시뮬 계산을 덮어써 어떤 입력 레지스터든 임의 값으로 고정한다
 function renderForce(force) {
   const list = byId("force_list");
   const keys = Object.keys(force);
@@ -536,7 +535,7 @@ byId("force_list").addEventListener("click", e => {
   }
 });
 
-// 응답 조작: 슬레이브가 마스터에 영향을 줄 수 있는 유일한 수단 (값·예외·지연)
+// 응답 조작 (예외·CRC·지연)
 byId("rc_exc_go").addEventListener("click", () => {
   const n = parseInt(byId("rc_exc_n").value);
   postJson("/api/inject", { exc_code: parseInt(byId("rc_exc").value), exc_n: n });
@@ -570,7 +569,7 @@ getJson("/api/icd").then(info => {
   ICD = info;
 });
 
-// 텍스트를 드래그하는 동안 DOM 을 갈아치우면 선택이 풀리므로 그동안은 갱신을 멈춘다
+// 드래그 중에 DOM 을 다시 그리면 텍스트 선택이 풀려서, 그동안은 갱신을 멈춥니다
 let mouseDown = false;
 document.addEventListener("mousedown", () => { mouseDown = true; });
 window.addEventListener("mouseup", () => { mouseDown = false; });
