@@ -1,4 +1,4 @@
-"""가상 UART 쌍: pty 2개를 만들어 서로 이어 준다 (1행 DM 포트, 2행 MCU 포트 출력)"""
+"""가상 UART 쌍: pty 2개를 서로 이어 줍니다. 1행에 DM 포트, 2행에 MCU 포트를 출력합니다"""
 import os
 import select
 import sys

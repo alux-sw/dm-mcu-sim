@@ -1,4 +1,3 @@
-"""JSON GET/POST 라우팅만 있는 최소 HTTP 서버"""
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -12,8 +11,6 @@ kCorsHeaders = {
 
 
 def serve(port, routes, html_path=None):
-    """routes = {("GET", "/api/x"): fn(body) -> obj}. html_path 는 '/' 에 그대로 내보낸다"""
-
     class Handler(BaseHTTPRequestHandler):
         def send(self, code, payload, content_type):
             self.send_response(code)
@@ -31,7 +28,7 @@ def serve(port, routes, html_path=None):
             self.send(204, b"", "text/plain")
 
         def do_GET(self):
-            is_root = urlsplit(self.path).path == "/"  # GUI 는 /?sim=... 처럼 쿼리가 붙어서 온다
+            is_root = urlsplit(self.path).path == "/"
             if is_root and html_path is not None:
                 with open(html_path, "rb") as f:
                     self.send(200, f.read(), "text/html; charset=utf-8")

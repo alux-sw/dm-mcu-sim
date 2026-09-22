@@ -1,12 +1,12 @@
 #!/bin/bash
-# SM 마스터와 MCU 시뮬레이터를 띄운다 (화면: 마스터 http://localhost:8880, 시뮬레이터 :8881)
+# SM 마스터와 MCU 시뮬레이터를 띄웁니다 (화면: 마스터 http://localhost:8880, 시뮬레이터 :8881)
 #
-#   ./run_sim.sh                        가상 UART 쌍 위에 둘 다 (기본)
-#   ./run_sim.sh --port /dev/ttyUSB0    실물 포트에 SM 마스터만 — 상대는 벤더 MCU
-#   ./run_sim.sh --port /dev/ttyUSB0 --slave   실물 포트에 MCU 시뮬만 — 상대는 벤더 DM
+#   ./run_sim.sh                        가상 UART 쌍 위에 둘 다 (기본값)
+#   ./run_sim.sh --port /dev/ttyUSB0    실물 포트에 SM 마스터만
+#   ./run_sim.sh --port /dev/ttyUSB0 --slave   실물 포트에 MCU 시뮬만
 #   ./run_sim.sh --list                 붙어 있는 시리얼 포트 목록
 #
-# 포트는 USB 어댑터(/dev/ttyUSB*)나 USB CDC(/dev/ttyACM*)도 된다. 8N1 115200 고정.
+# 포트는 8N1 115200 고정.
 cd "$(dirname "$0")"
 
 kPortGlobs="/dev/ttyUSB* /dev/ttyACM*"
@@ -28,14 +28,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# 포트가 없거나 못 열면 가상으로 — 화면이 죽어 손도 못 대는 상황을 막는다
 if [ -n "$port" ] && [ ! -w "$port" ]; then
     echo "[!] $port 를 열 수 없다 — 가상 UART 로 돌아간다" >&2
     port=""
     is_slave_only=false
 fi
 
-trap 'kill $(jobs -p) 2>/dev/null' EXIT   # 우리가 띄운 자식만 — kill 0 은 부모 셸까지 죽인다
+trap 'kill $(jobs -p) 2>/dev/null' EXIT
 
 if [ -z "$port" ]; then
     if [ "$is_slave_only" = true ]; then
@@ -52,4 +51,4 @@ else
     python3 sm_master.py "$port" &
 fi
 
-wait -n          # 하나만 죽어도 빠져나온다 (systemd 가 통째로 재시작)
+wait -n

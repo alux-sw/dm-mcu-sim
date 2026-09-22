@@ -1,4 +1,4 @@
-"""SM(Station Manager) 마스터 프로토타입: ICD 폴링 주기로 MCU 를 읽고 명령·설정을 쓴다"""
+"""SM(Station Manager) 마스터 프로토타입: ICD 폴링 주기로 MCU 를 읽고 명령·설정 씀"""
 import collections
 import os
 import queue
@@ -51,9 +51,8 @@ class Sm:
         self.last_error = ""
         self.is_bms_ident_read = False
 
-    # --- Modbus 왕복 ---
     def transact(self, request):
-        """요청 (+재시도 1회) → 응답 프레임, 실패 시 None"""
+        """실패하면 1회 재시도하고, 그래도 안 되면 None 을 돌려줍니다"""
         for _ in range(kRetries + 1):
             self.frames.append([time.time(), "TX", request.hex()])
             resp = mb.transact(self.fd, request, kResponseTimeout)
@@ -99,7 +98,7 @@ class Sm:
         return True
 
     def read_holding_all(self):
-        """정의된 보유 레지스터를 연속 구간별로 0x03 읽어 holding 에 채운다"""
+        """보유 레지스터를 연속된 구간 단위로 묶어 0x03 으로 읽습니다"""
         addrs = sorted(icd.HOLDING_NAMES)
         start = addrs[0]
         prev = addrs[0]
@@ -116,7 +115,6 @@ class Sm:
             start = a
             prev = a
 
-    # --- 폴링 루프 ---
     def loop(self):
         self.read_holding_all()
         now = time.monotonic()
@@ -189,7 +187,6 @@ class Sm:
             if is_done:
                 c["done"] = {"result": icd.DONE_RESULT_NAMES.get(r[icd.DONE_RESULT], r[icd.DONE_RESULT]), "data": r[icd.DONE_DATA], "t": now}
 
-    # --- HTTP ---
     def send_command(self, body):
         code = int(body["code"])
         arg0 = int(body.get("arg0", 0))

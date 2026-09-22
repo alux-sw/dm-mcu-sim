@@ -1,4 +1,3 @@
-"""Modbus RTU 프레임 조립·해석과 시리얼 포트 입출력"""
 import os
 import select
 import termios
@@ -34,7 +33,6 @@ def crc16(data):
 
 
 def with_crc(pdu):
-    """PDU 뒤에 CRC(LO, HI) 를 붙인다"""
     crc = crc16(pdu)
     return bytes(pdu) + bytes([crc & 0xFF, crc >> 8])
 
@@ -48,7 +46,6 @@ def u16_pair(value):
 
 
 def open_serial(path):
-    """8N1 115200 raw 모드로 열어 fd 를 돌려준다"""
     fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
     attrs = termios.tcgetattr(fd)
     attrs[0] = 0
@@ -89,7 +86,6 @@ def resp_read(fc, values):
 
 
 def resp_write_ok(request):
-    """0x06 은 요청 그대로, 0x10 은 주소+개수까지 되돌려 준다"""
     return with_crc(request[:6])
 
 
@@ -98,7 +94,6 @@ def resp_exception(fc, code):
 
 
 def parse_read_values(resp):
-    """0x03/0x04 응답 → u16 리스트"""
     count = resp[2] // 2
     return [(resp[3 + 2 * i] << 8) | resp[4 + 2 * i] for i in range(count)]
 
@@ -134,7 +129,6 @@ def response_len(buf):
 
 
 def read_frame(fd, length_fn, timeout_s):
-    """timeout 안에 CRC 가 맞는 프레임 하나를 읽어 bytes 로, 없으면 None"""
     buf = bytearray()
     deadline = time.monotonic() + timeout_s
     while True:
@@ -162,7 +156,7 @@ def read_frame(fd, length_fn, timeout_s):
 
 
 def transact(fd, request, timeout_s):
-    """요청 1회 보내고 응답 프레임을 기다린다"""
+    """요청 1회 보내고 응답 프레임 대기"""
     termios.tcflush(fd, termios.TCIFLUSH)
     os.write(fd, request)
     return read_frame(fd, response_len, timeout_s)
