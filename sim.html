@@ -32,6 +32,12 @@
   .val-edit input { width: 72px; }
   .rx-head { color: #aaa; margin: 6px 0 2px; }
   .station-bar { display: flex; gap: 18px; align-items: center; margin-bottom: 4px; }
+  .view-toggle button { margin: 0; }
+  .view-toggle button.on { background: #1e88e5; border-color: #1e88e5; }
+  #station3d { position: relative; width: 100%; max-width: 1100px; height: 440px; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #17181b; }
+  #station3d canvas { display: block; }
+  #s3d_banner { position: absolute; top: 10px; width: 100%; text-align: center; font-size: 26px; font-weight: bold; pointer-events: none; text-shadow: 0 0 10px #000; }
+  #s3d_hint { position: absolute; bottom: 8px; left: 12px; color: #9aa; font-size: 11px; pointer-events: none; }
   svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; background: #17181b; border-radius: 6px; }
   svg text { font-family: system-ui, sans-serif; fill: #ccc; font-size: 12px; }
   .door { fill: #8a8f99; transition: transform .2s linear; }
@@ -80,11 +86,12 @@
   <section class="wide">
     <div class="station-bar">
       <h2 style="margin:0">스테이션 (측면에서 본 모습, 오른쪽이 정면)</h2>
+      <span class="view-toggle"><button id="view2d" class="on">2D</button><button id="view3d">3D</button></span>
       <span>커버 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="cover_sec"></span>
       <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
       <span id="status_line"></span>
     </div>
-    <svg viewBox="0 0 900 340">
+    <svg id="station2d" viewBox="0 0 900 340">
       <text id="banner" x="450" y="44" text-anchor="middle"></text>
       <text id="env_text" x="885" y="24" text-anchor="end"></text>
       <text id="maint_text" x="885" y="44" text-anchor="end" fill="#ce93d8"></text>
@@ -140,6 +147,7 @@
       <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
       <text x="60" y="282" font-size="10">정비</text>
     </svg>
+    <div id="station3d" class="hide"><div id="s3d_banner"></div><div id="s3d_hint">3D 불러오는 중…</div></div>
   </section>
   <section>
     <h2>주입</h2>
@@ -457,7 +465,42 @@ function renderStation(s) {
     }
   }
   setText("status_line", status);
+  if (window.station3dUpdate) {
+    window.station3dUpdate(s);
+  }
 }
+
+// 2D ↔ 3D 보기 전환 (고른 보기는 브라우저가 기억)
+function setView(is_3d) {
+  setClass("station2d", "hide", is_3d);
+  setClass("station3d", "hide", !is_3d);
+  setClass("view2d", "on", !is_3d);
+  setClass("view3d", "on", is_3d);
+  let view = "2d";
+  if (is_3d) {
+    view = "3d";
+  }
+  try {
+    localStorage.setItem("stationView", view);
+  } catch (e) {
+  }
+  if (is_3d) {
+    window.station3dShow();
+  }
+}
+
+byId("view2d").addEventListener("click", () => setView(false));
+byId("view3d").addEventListener("click", () => setView(true));
+window.addEventListener("DOMContentLoaded", () => {
+  let saved = "2d";
+  try {
+    saved = localStorage.getItem("stationView") || "2d";
+  } catch (e) {
+  }
+  if (saved === "3d") {
+    setView(true);
+  }
+});
 
 function bindInject(root) {
   root.querySelectorAll("input[data-key]").forEach(el => el.addEventListener("change", () => {
@@ -626,6 +669,693 @@ setInterval(() => {
     setText("simerr", "");
   }).catch(() => setText("simerr", "mcu_sim 연결 실패"));
 }, 200);
+</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+// 3D 스테이션. 3D 를 처음 켤 때 three.js·에셋을 CDN 에서 불러온다 (2D 는 인터넷 없이도 동작)
+const kW = 1.4;
+const kH = 1.0;
+const kD = 1.2;
+const kWall = 0.04;
+const kPlinth = 0.14;
+const kSlideTravel = 1.25;
+const kSideDoorOpen = Math.PI * 0.56;
+const kSideZ0 = -0.3;
+const kSideZ1 = 0.16;
+const kSideY0 = 0.18;
+const kSideY1 = 0.66;
+const kLedColors = [0x222222, 0x2e7d32, 0xffb300, 0x1e88e5, 0x00acc1, 0xef6c00, 0xd32f2f, 0x8e24aa, 0x43a047, 0xeeeeee];
+const kLedBlinkSec = [0, 0, 0.6, 0, 1.0, 0.5, 0.25, 0, 0, 0.3];
+const kLedBreathe = 8;
+const kHdri = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/empty_warehouse_01_2k.hdr";
+const kSkyHeight = 2.4;
+const kSkyRadius = 40;
+const kTex = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/";
+const kHint = "드래그: 회전 · 휠: 확대 · 우클릭 드래그: 이동 · 패널 버튼 클릭 가능 · 창고 배경·바닥: Poly Haven (CC0)";
+
+const box = document.getElementById("station3d");
+let THREE = null;
+let v = null;
+let last = null;
+let is_started = false;
+
+window.station3dShow = () => {
+  if (is_started) {
+    return;
+  }
+  is_started = true;
+  init();
+};
+
+window.station3dUpdate = s => {
+  last = s;
+};
+
+async function init() {
+  try {
+    THREE = await import("three");
+    const mods = await Promise.all([
+      import("three/addons/controls/OrbitControls.js"),
+      import("three/addons/geometries/RoundedBoxGeometry.js"),
+      import("three/addons/loaders/RGBELoader.js"),
+      import("three/addons/postprocessing/EffectComposer.js"),
+      import("three/addons/postprocessing/RenderPass.js"),
+      import("three/addons/postprocessing/UnrealBloomPass.js"),
+      import("three/addons/postprocessing/OutputPass.js"),
+      import("three/addons/objects/GroundedSkybox.js"),
+    ]);
+    build(Object.assign({}, ...mods));
+    document.getElementById("s3d_hint").textContent = kHint;
+  } catch (e) {
+    document.getElementById("s3d_hint").textContent = "3D 를 불러오지 못했습니다 (three.js 는 인터넷에서 받습니다): " + e.message;
+  }
+}
+
+// ---- 만들기 도우미 ----
+
+function mat(color, metalness, roughness, extra) {
+  return new THREE.MeshStandardMaterial(Object.assign({ color, metalness, roughness }, extra || {}));
+}
+
+function place(mesh, x, y, z, parent) {
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+function cube(w, h, d, material, x, y, z, parent) {
+  return place(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material), x, y, z, parent);
+}
+
+function rbox(w, h, d, r, material, x, y, z, parent) {
+  return place(new THREE.Mesh(new v.RoundedBoxGeometry(w, h, d, 4, r), material), x, y, z, parent);
+}
+
+function cyl(rt, rb, h, material, x, y, z, parent) {
+  return place(new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, 32), material), x, y, z, parent);
+}
+
+function canvasTexture(w, h, draw) {
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  draw(c.getContext("2d"), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  return t;
+}
+
+function pbr(name, repeat) {
+  const loader = new THREE.TextureLoader();
+  const maps = {};
+  for (const [key, suffix] of [["map", "diff"], ["normalMap", "nor_gl"], ["roughnessMap", "rough"]]) {
+    const t = loader.load(`${kTex}${name}/${name}_${suffix}_1k.jpg`);
+    t.wrapS = THREE.RepeatWrapping;
+    t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeat, repeat);
+    t.anisotropy = 8;
+    if (key === "map") {
+      t.colorSpace = THREE.SRGBColorSpace;
+    }
+    maps[key] = t;
+  }
+  return new THREE.MeshStandardMaterial(maps);
+}
+
+// 벽에 붙이는 글자판 (오른쪽 벽 바깥쪽을 봄)
+function label(text, color, x, y, z, width, parent) {
+  const tex = canvasTexture(512, 128, (g, w, h) => {
+    g.fillStyle = color;
+    g.font = "bold 96px system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(text, w / 2, h / 2 + 4);
+  });
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(width, width / 4), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+  plane.rotation.y = Math.PI / 2;
+  plane.position.set(x + 0.013, y, z);
+  parent.add(plane);
+  return plane;
+}
+
+// 노랑·검정 빗금 테두리 (가운데는 비움)
+function hazardTexture() {
+  return canvasTexture(1024, 1300, (g, w, h) => {
+    const band = 56;
+    g.save();
+    g.beginPath();
+    g.rect(0, 0, w, h);
+    g.rect(band, band, w - band * 2, h - band * 2);
+    g.clip("evenodd");
+    g.fillStyle = "#f2b705";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#1a1a1a";
+    for (let i = -h; i < w + h; i += 80) {
+      g.beginPath();
+      g.moveTo(i, 0);
+      g.lineTo(i + 40, 0);
+      g.lineTo(i + 40 - h, h);
+      g.lineTo(i - h, h);
+      g.fill();
+    }
+    g.restore();
+  });
+}
+
+// 팔레트 랙 한 칸 (파란 기둥·주황 빔·상자). 상자 크기는 고정 시드로 매번 같게
+function rack(x, z, parent) {
+  const kLen = 2.6;
+  const kDepth = 1.0;
+  const upright = mat(0x1f4e9c, 0.5, 0.45);
+  const beam = mat(0xf57c00, 0.4, 0.45);
+  const deck = mat(0x6b7078, 0.6, 0.5);
+  const card = mat(0xb98a5a, 0, 0.85);
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  parent.add(g);
+  for (const px of [-kLen / 2, kLen / 2]) {
+    for (const pz of [-kDepth / 2, kDepth / 2]) {
+      cube(0.08, 3.0, 0.08, upright, px, 1.5, pz, g);
+    }
+  }
+  let seed = Math.abs(Math.round(x * 97 + z * 31)) + 7;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  for (const y of [0.15, 1.15, 2.15]) {
+    for (const pz of [-kDepth / 2, kDepth / 2]) {
+      cube(kLen, 0.1, 0.05, beam, 0, y, pz, g);
+    }
+    cube(kLen - 0.06, 0.02, kDepth, deck, 0, y + 0.06, 0, g);
+    for (let bx = -kLen / 2 + 0.35; bx < kLen / 2 - 0.2; bx += 0.62) {
+      const bw = 0.42 + rand() * 0.15;
+      const bh = 0.3 + rand() * 0.45;
+      cube(bw, bh, 0.6 + rand() * 0.25, card, bx, y + 0.07 + bh / 2, 0, g);
+    }
+  }
+}
+
+function logoTexture() {
+  return canvasTexture(1024, 256, (g, w, h) => {
+    g.fillStyle = "#1c2430";
+    g.font = "bold 150px system-ui, sans-serif";
+    g.fillText("X-SAFE", 20, 150);
+    g.fillStyle = "#1e88e5";
+    g.fillRect(24, 180, 560, 10);
+    g.fillStyle = "#56606c";
+    g.font = "600 44px system-ui, sans-serif";
+    g.fillText("DS-1  DRONE STATION", 24, 240);
+  });
+}
+
+function padTexture() {
+  return canvasTexture(1024, 1024, (g, w, h) => {
+    g.fillStyle = "#2a2e35";
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = "#ffc107";
+    g.lineWidth = 34;
+    g.beginPath();
+    g.arc(w / 2, h / 2, 360, 0, Math.PI * 2);
+    g.stroke();
+    g.fillStyle = "#f5f5f5";
+    g.font = "bold 460px system-ui, sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText("H", w / 2, h / 2 + 20);
+    g.fillStyle = "#ffc107";
+    for (const [x, y] of [[40, 40], [w - 140, 40], [40, h - 60], [w - 140, h - 60]]) {
+      g.fillRect(x, y, 100, 20);
+    }
+  });
+}
+
+// ---- 장면 ----
+
+function build(m) {
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.62;
+  box.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x17191c);
+  // 창고 HDRI: 반사광으로 쓰고, 바닥에 투영한 스카이박스로 배경을 만든다
+  new m.RGBELoader().load(kHdri, hdr => {
+    hdr.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = hdr;
+    scene.environmentIntensity = 0.8;
+    const sky = new m.GroundedSkybox(hdr, kSkyHeight, kSkyRadius);
+    sky.position.y = kSkyHeight - 0.01;
+    sky.material.color.setScalar(0.65);
+    scene.add(sky);
+  });
+
+  const camera = new THREE.PerspectiveCamera(36, 2, 0.05, 200);
+  camera.position.set(2.7, 1.45, 3.1);
+  const controls = new m.OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 0.5, 0.65);
+  controls.enableDamping = true;
+  controls.maxPolarAngle = Math.PI * 0.48;
+  controls.minDistance = 1.2;
+  controls.maxDistance = 10;
+
+  const composer = new m.EffectComposer(renderer);
+  composer.addPass(new m.RenderPass(scene, camera));
+  const bloom = new m.UnrealBloomPass(new THREE.Vector2(512, 512), 0.4, 0.3, 1.1);
+  composer.addPass(bloom);
+  composer.addPass(new m.OutputPass());
+
+  // 천장 고천장등 두 개 (앞쪽 것이 그림자를 드리움)
+  scene.add(new THREE.HemisphereLight(0xcfd8e6, 0x202020, 0.25));
+  for (const [x, z, is_shadow] of [[1.5, 2.2, true], [-2.0, -1.5, false]]) {
+    const bay = new THREE.SpotLight(0xfff1dc, 55, 0, Math.PI / 5, 0.6, 2);
+    bay.position.set(x, 6, z);
+    bay.target.position.set(0, 0, 0.5);
+    bay.castShadow = is_shadow;
+    bay.shadow.mapSize.set(2048, 2048);
+    bay.shadow.radius = 4;
+    bay.shadow.bias = -0.0004;
+    scene.add(bay, bay.target);
+  }
+
+  v = { RoundedBoxGeometry: m.RoundedBoxGeometry };
+
+  // 바닥: 그림자만 받는 투명판 + 스테이션 자리 콘크리트 슬래브와 안전 빗금 테두리
+  const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: 0.5 }));
+  shadowFloor.rotation.x = -Math.PI / 2;
+  shadowFloor.position.y = 0.002;
+  shadowFloor.receiveShadow = true;
+  scene.add(shadowFloor);
+  rbox(3.0, 0.06, 3.8, 0.02, pbr("concrete_floor_02", 2), 0, 0.03, 0.7, scene);
+  const hazard = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 3.8), new THREE.MeshStandardMaterial({ map: hazardTexture(), transparent: true, roughness: 0.8 }));
+  hazard.rotation.x = -Math.PI / 2;
+  hazard.position.set(0, 0.062, 0.7);
+  hazard.receiveShadow = true;
+  scene.add(hazard);
+  rack(-2.4, -3.3, scene);
+  rack(0.6, -3.3, scene);
+
+  const white = mat(0xe6eaef, 0.2, 0.42, { envMapIntensity: 0.8 });
+  const dark = mat(0x262b33, 0.55, 0.45);
+  const inner = mat(0x30343b, 0.2, 0.75);
+  const accent = mat(0x1e88e5, 0.35, 0.35);
+  const metal = mat(0xa9b3bd, 0.9, 0.28);
+
+  const root = new THREE.Group();
+  root.position.y = kPlinth + 0.06;
+  scene.add(root);
+
+  // 받침·몸체
+  rbox(kW + 0.08, kPlinth, kD + 0.08, 0.02, dark, 0, -kPlinth / 2, 0, root);
+  cube(kW, kWall, kD, inner, 0, kWall / 2, 0, root);
+  rbox(kW + 0.12, 0.09, kD + 0.12, 0.035, white, 0, kH + 0.045, 0, root);
+  rbox(kW, kH, kWall, 0.012, white, 0, kH / 2, -kD / 2 + kWall / 2, root);
+  rbox(kWall, kH, kD, 0.012, white, -kW / 2 + kWall / 2, kH / 2, 0, root);
+  // 오른쪽 벽은 측면 도어 개구부를 두고 네 조각으로
+  const rx = kW / 2 - kWall / 2;
+  rbox(kWall, kH, kSideZ0 + kD / 2, 0.01, white, rx, kH / 2, (kSideZ0 - kD / 2) / 2, root);
+  rbox(kWall, kH, kD / 2 - kSideZ1, 0.01, white, rx, kH / 2, (kSideZ1 + kD / 2) / 2, root);
+  rbox(kWall, kSideY0, kSideZ1 - kSideZ0, 0.01, white, rx, kSideY0 / 2, (kSideZ0 + kSideZ1) / 2, root);
+  rbox(kWall, kH - kSideY1, kSideZ1 - kSideZ0, 0.01, white, rx, (kH + kSideY1) / 2, (kSideZ0 + kSideZ1) / 2, root);
+  for (const sx of [-1, 1]) {
+    cube(0.006, 0.035, kD - 0.06, accent, sx * (kW / 2 + 0.003), kH - 0.16, 0, root);
+  }
+  cube(kW - 0.06, 0.035, 0.006, accent, 0, kH - 0.16, -kD / 2 - 0.003, root);
+  for (const [w, h, d, x, y, z] of [[kW + 0.02, 0.1, 0.05, 0, kH - 0.05, kD / 2], [0.06, kH, 0.05, -kW / 2 + 0.01, kH / 2, kD / 2], [0.06, kH, 0.05, kW / 2 - 0.01, kH / 2, kD / 2]]) {
+    rbox(w, h, d, 0.01, dark, x, y, z, root);
+  }
+  for (const sx of [-1, 1]) {
+    for (let i = 0; i < 6; i++) {
+      cube(0.008, 0.012, 0.2, dark, sx * (kW / 2 + 0.004), 0.25 + i * 0.03, -kD / 2 + 0.16, root);
+    }
+  }
+  const logo = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.155), new THREE.MeshStandardMaterial({ map: logoTexture(), transparent: true, roughness: 0.4 }));
+  logo.rotation.y = -Math.PI / 2;
+  logo.position.set(-kW / 2 - 0.004, 0.62, 0.25);
+  root.add(logo);
+  const ceilingPanel = cube(kW - 0.16, 0.01, kD - 0.25, mat(0xffffff, 0, 0.5, { emissive: 0xfff3c4, emissiveIntensity: 0 }), 0, kH - 0.012, 0, root);
+
+  // 정면 도어: 아래 모서리를 축으로 앞으로 젖혀짐 (바깥 흰색, 안쪽 어두움)
+  const frontPivot = new THREE.Group();
+  frontPivot.position.set(0, 0.01, kD / 2 + 0.03);
+  root.add(frontPivot);
+  const doorH = kH - 0.11;
+  rbox(kW - 0.1, doorH, 0.035, 0.012, white, 0, doorH / 2, 0.02, frontPivot);
+  cube(kW - 0.16, doorH - 0.06, 0.004, inner, 0, doorH / 2, 0.0, frontPivot);
+  cube(kW * 0.62, 0.035, 0.004, accent, 0, doorH * 0.64, 0.04, frontPivot);
+  for (const sx of [-1, 1]) {
+    const hinge = cyl(0.018, 0.018, 0.12, metal, sx * (kW / 2 - 0.12), 0, 0.02, frontPivot);
+    hinge.rotation.z = Math.PI / 2;
+  }
+
+  // 측면 도어 (오른쪽 벽): 위로 밀려 올라감
+  // 측면 도어 (오른쪽 벽): 뒤쪽 모서리 경첩으로 바깥으로 열림. 커버와 같이 움직인다 (ICD 에 별도 명령 없음)
+  const sideDoor = new THREE.Group();
+  sideDoor.position.set(kW / 2 + 0.012, kSideY0, kSideZ0);
+  root.add(sideDoor);
+  const sideW = kSideZ1 - kSideZ0 - 0.01;
+  const sideH = kSideY1 - kSideY0 - 0.01;
+  rbox(0.022, sideH, sideW, 0.008, white, 0, sideH / 2, sideW / 2, sideDoor);
+  cube(0.004, sideH - 0.04, sideW - 0.04, inner, -0.012, sideH / 2, sideW / 2, sideDoor);
+  cube(0.004, 0.02, sideW - 0.06, accent, 0.012, sideH * 0.8, sideW / 2, sideDoor);
+  rbox(0.02, 0.12, 0.022, 0.008, dark, 0.02, sideH / 2, sideW - 0.05, sideDoor);
+  for (const y of [0.06, sideH - 0.06]) {
+    cyl(0.012, 0.012, 0.07, metal, 0, y, 0, sideDoor);
+  }
+
+  // 착륙판 (슬라이드) + 헬리패드 + 충전 패드
+  const platform = new THREE.Group();
+  root.add(platform);
+  rbox(kW - 0.22, 0.05, kD - 0.14, 0.01, metal, 0, 0.3, 0, platform);
+  const deck = new THREE.Mesh(new THREE.PlaneGeometry(kW - 0.3, kD - 0.22), new THREE.MeshStandardMaterial({ map: padTexture(), roughness: 0.7 }));
+  deck.rotation.x = -Math.PI / 2;
+  deck.position.y = 0.326;
+  deck.receiveShadow = true;
+  platform.add(deck);
+  const padMat = mat(0x8d8d8d, 0.8, 0.3, { emissive: 0xffc94d, emissiveIntensity: 0 });
+  cube(0.07, 0.008, 0.16, padMat, -0.15, 0.331, 0.02, platform);
+  cube(0.07, 0.008, 0.16, padMat, 0.15, 0.331, 0.02, platform);
+  for (const x of [-0.46, 0.46]) {
+    cube(0.03, 0.03, kD - 0.1, metal, x, 0.26, 0, root);
+  }
+
+  // 드론 (하중 센서가 감지하면 보임)
+  const drone = new THREE.Group();
+  drone.position.set(0, 0.4, 0.02);
+  platform.add(drone);
+  const shell = mat(0xd9dde2, 0.3, 0.35);
+  const carbon = mat(0x1d1f23, 0.4, 0.5);
+  rbox(0.2, 0.07, 0.3, 0.025, shell, 0, 0.02, 0, drone);
+  rbox(0.14, 0.03, 0.22, 0.012, carbon, 0, 0.065, -0.01, drone);
+  const cam = new THREE.Mesh(new THREE.SphereGeometry(0.03, 24, 16), carbon);
+  place(cam, 0, -0.03, 0.14, drone);
+  const lens = cyl(0.012, 0.012, 0.01, mat(0x0a2a4a, 0.9, 0.1), 0, -0.03, 0.17, drone);
+  lens.rotation.x = Math.PI / 2;
+  const props = [];
+  const navMats = [];
+  for (const [i, a] of [Math.PI / 4, 3 * Math.PI / 4, 5 * Math.PI / 4, 7 * Math.PI / 4].entries()) {
+    const ax = Math.cos(a);
+    const az = Math.sin(a);
+    const arm = cyl(0.011, 0.014, 0.26, carbon, ax * 0.17, 0.03, az * 0.17, drone);
+    arm.rotation.z = Math.PI / 2;
+    arm.rotation.y = -a;
+    cyl(0.024, 0.024, 0.035, carbon, ax * 0.3, 0.045, az * 0.3, drone);
+    const prop = new THREE.Group();
+    prop.position.set(ax * 0.3, 0.068, az * 0.3);
+    drone.add(prop);
+    cube(0.24, 0.003, 0.022, carbon, 0, 0, 0, prop);
+    props.push(prop);
+    const is_front = az > 0;
+    let navColor = 0x00e676;
+    if (is_front) {
+      navColor = 0xff1744;
+    }
+    const nav = mat(0x111111, 0, 0.3, { emissive: navColor, emissiveIntensity: 2 });
+    navMats.push(nav);
+    place(new THREE.Mesh(new THREE.SphereGeometry(0.008, 12, 8), nav), ax * 0.3, 0.02, az * 0.3, drone);
+    if (i < 2) {
+      const skid = cyl(0.006, 0.006, 0.26, carbon, (i * 2 - 1) * 0.09, -0.055, 0, drone);
+      skid.rotation.x = Math.PI / 2;
+    }
+  }
+  for (const [x, z] of [[-0.09, -0.08], [0.09, -0.08], [-0.09, 0.08], [0.09, 0.08]]) {
+    cyl(0.005, 0.005, 0.06, carbon, x, -0.025, z, drone);
+  }
+
+  // 상태 LED 띠 (정면 위 프레임)
+  const ledMat = mat(0x111111, 0, 0.3, { emissive: 0x222222, emissiveIntensity: 1 });
+  cube(kW - 0.16, 0.018, 0.01, ledMat, 0, kH - 0.05, kD / 2 + 0.03, root);
+
+  // 지붕 장비: 경광등·투광등·GNSS·안테나·풍속계·감시 카메라
+  const roofY = kH + 0.09;
+  cyl(0.06, 0.07, 0.035, dark, -kW / 2 + 0.16, roofY + 0.018, -kD / 2 + 0.2, root);
+  const beaconMat = mat(0x3a0000, 0, 0.15, { emissive: 0xff1744, emissiveIntensity: 0, transparent: true, opacity: 0.85 });
+  place(new THREE.Mesh(new THREE.SphereGeometry(0.055, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2), beaconMat), -kW / 2 + 0.16, roofY + 0.035, -kD / 2 + 0.2, root);
+  const beaconLight = new THREE.PointLight(0xff1744, 0, 3.5);
+  beaconLight.position.set(-kW / 2 + 0.16, roofY + 0.12, -kD / 2 + 0.2);
+  root.add(beaconLight);
+  const lampMat = mat(0x222222, 0.3, 0.2, { emissive: 0xfff4d6, emissiveIntensity: 0 });
+  rbox(0.34, 0.04, 0.07, 0.01, dark, 0.2, roofY + 0.02, kD / 2 - 0.02, root);
+  cube(0.3, 0.02, 0.005, lampMat, 0.2, roofY + 0.02, kD / 2 + 0.016, root);
+  const outerLight = new THREE.SpotLight(0xfff4d6, 0, 7, Math.PI / 4.5, 0.6, 1.2);
+  outerLight.position.set(0.2, roofY + 0.02, kD / 2 + 0.03);
+  outerLight.target.position.set(0, 0, kD / 2 + 1.4);
+  root.add(outerLight, outerLight.target);
+  const innerLight = new THREE.PointLight(0xfff3c4, 0, 2.5);
+  innerLight.position.set(0, kH - 0.15, 0);
+  root.add(innerLight);
+  cyl(0.05, 0.05, 0.022, white, kW / 2 - 0.2, roofY + 0.011, -kD / 2 + 0.2, root);
+  for (const x of [kW / 2 - 0.34, kW / 2 - 0.06]) {
+    cyl(0.006, 0.009, 0.32, dark, x, roofY + 0.16, -kD / 2 + 0.12, root);
+  }
+  cyl(0.008, 0.008, 0.3, metal, 0, roofY + 0.15, -kD / 2 + 0.15, root);
+  const anemo = new THREE.Group();
+  anemo.position.set(0, roofY + 0.31, -kD / 2 + 0.15);
+  root.add(anemo);
+  for (let i = 0; i < 3; i++) {
+    const arm = new THREE.Group();
+    arm.rotation.y = i * 2 * Math.PI / 3;
+    anemo.add(arm);
+    cube(0.12, 0.005, 0.005, metal, 0.06, 0, 0, arm);
+    place(new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 8, 0, Math.PI), dark), 0.12, 0, 0, arm);
+  }
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(0.045, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x0d0f12, 0.6, 0.08, { transparent: true, opacity: 0.92 }));
+  place(dome, -kW / 2 + 0.08, kH - 0.005, kD / 2 - 0.08, root);
+
+  // 공조: 왼쪽 벽 환풍기 + 히터·쿨러 표시등
+  const fan = new THREE.Group();
+  fan.position.set(-kW / 2 - 0.014, 0.62, -0.2);
+  root.add(fan);
+  const grille = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.012, 12, 40), dark);
+  grille.rotation.y = Math.PI / 2;
+  fan.add(grille);
+  const blades = new THREE.Group();
+  fan.add(blades);
+  for (let i = 0; i < 5; i++) {
+    const blade = cube(0.005, 0.1, 0.035, metal, 0, 0, 0, blades);
+    blade.geometry.translate(0, 0.05, 0);
+    blade.rotation.x = i * 2 * Math.PI / 5;
+  }
+  const heaterMat = mat(0x220800, 0, 0.3, { emissive: 0xff5722, emissiveIntensity: 0 });
+  const coolerMat = mat(0x000a22, 0, 0.3, { emissive: 0x29b6f6, emissiveIntensity: 0 });
+  place(new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), heaterMat), -kW / 2 - 0.01, 0.8, -0.3, root);
+  place(new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), coolerMat), -kW / 2 - 0.01, 0.8, -0.1, root);
+
+  // 조작 패널 (오른쪽 벽 앞쪽): E-STOP + 현장 버튼 3개, 클릭하면 실제 주입
+  const panelX = kW / 2 + 0.012;
+  const panelZ = kD / 2 - 0.21;
+  rbox(0.02, 0.62, 0.34, 0.012, dark, panelX, 0.66, panelZ, root);
+  rbox(0.022, 0.2, 0.2, 0.01, mat(0xffc107, 0.2, 0.45), panelX + 0.004, 0.83, panelZ, root);
+  const estopMat = mat(0xb71c1c, 0.1, 0.3, { emissive: 0xff1744, emissiveIntensity: 0 });
+  const estop = cyl(0.07, 0.06, 0.06, estopMat, panelX + 0.045, 0.83, panelZ, root);
+  estop.rotation.z = Math.PI / 2;
+  label("E-STOP", "#ffc107", panelX, 0.955, panelZ, 0.22, root);
+  const buttons = [{ mesh: estop, key: "estop", mat: estopMat }];
+  for (const [i, [key, text, color]] of [["btn_door", "도어", 0x2e7d32], ["btn_slide", "슬라이드", 0x1565c0], ["btn_maint", "정비", 0x7b1fa2]].entries()) {
+    const y = 0.64 - i * 0.095;
+    const z = panelZ - 0.09;
+    const btnMat = mat(color, 0.2, 0.35, { emissive: color, emissiveIntensity: 0 });
+    const btn = cyl(0.036, 0.036, 0.03, btnMat, panelX + 0.024, y, z, root);
+    btn.rotation.z = Math.PI / 2;
+    cyl(0.043, 0.043, 0.012, metal, panelX + 0.012, y, z, root).rotation.z = Math.PI / 2;
+    label(text, "#ffffff", panelX, y, panelZ + 0.06, 0.2, root);
+    buttons.push({ mesh: btn, key, mat: btnMat });
+  }
+
+  // 침수: 바닥의 물
+  const water = cube(kW - 0.1, 0.06, kD - 0.1, mat(0x1e88e5, 0.1, 0.05, { transparent: true, opacity: 0.5 }), 0, kWall + 0.03, 0, root);
+  water.castShadow = false;
+
+  Object.assign(v, { renderer, scene, camera, controls, composer, bloom, frontPivot, sideDoor, platform, drone, props, navMats, padMat, ledMat,
+    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons, water,
+    cover: 0, slide: 0, clock: new THREE.Clock() });
+
+  new ResizeObserver(resize).observe(box);
+  resize();
+  bindClick();
+  renderer.setAnimationLoop(frame);
+}
+
+function resize() {
+  const w = box.clientWidth;
+  const h = box.clientHeight;
+  if (w === 0 || h === 0) {
+    return;
+  }
+  v.renderer.setSize(w, h);
+  v.composer.setSize(w, h);
+  v.camera.aspect = w / h;
+  v.camera.updateProjectionMatrix();
+}
+
+// 마우스 아래의 패널 버튼 (없으면 null)
+function buttonAt(e) {
+  const r = v.renderer.domElement.getBoundingClientRect();
+  const p = new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(p, v.camera);
+  const hit = ray.intersectObjects(v.buttons.map(b => b.mesh))[0];
+  if (hit === undefined) {
+    return null;
+  }
+  return v.buttons.find(b => b.mesh === hit.object);
+}
+
+// 버튼 클릭 → 주입. E-STOP 은 눌림/해제 전환, 현장 버튼은 한 번 누름 (드래그로 돌린 건 클릭으로 치지 않음)
+function bindClick() {
+  const el = v.renderer.domElement;
+  let downAt = null;
+  el.addEventListener("pointerdown", e => { downAt = [e.clientX, e.clientY]; });
+  el.addEventListener("pointerup", e => {
+    const is_click = downAt !== null && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 4;
+    downAt = null;
+    const b = buttonAt(e);
+    if (!is_click || last === null || b === null) {
+      return;
+    }
+    let value = true;
+    if (b.key === "estop") {
+      value = !last.inject.estop;
+    }
+    window.postJson("/api/inject", { [b.key]: value });
+  });
+  el.addEventListener("pointermove", e => {
+    let cursor = "grab";
+    if (buttonAt(e) !== null) {
+      cursor = "pointer";
+    }
+    el.style.cursor = cursor;
+  });
+}
+
+function ledLevel(pattern, t) {
+  if (pattern === kLedBreathe) {
+    return 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * Math.PI));
+  }
+  const sec = kLedBlinkSec[pattern];
+  if (sec === 0) {
+    return 1;
+  }
+  if ((t % sec) < sec / 2) {
+    return 1;
+  }
+  return 0.12;
+}
+
+function frame() {
+  const dt = Math.min(v.clock.getDelta(), 0.1);
+  const t = v.clock.elapsedTime;
+  v.controls.update();
+  v.anemo.rotation.y += dt * 3;
+  if (last !== null) {
+    apply(last, dt, t);
+  }
+  v.composer.render();
+}
+
+// 스냅샷 → 장면. 위치는 부드럽게 따라가고 빛은 패턴대로 깜빡인다
+function apply(s, dt, t) {
+  const n = s.internal;
+  const inj = s.inject;
+  const k = Math.min(1, dt * 10);
+  v.cover += (n.cover_pos - v.cover) * k;
+  v.slide += (n.slide_pos - v.slide) * k;
+  v.frontPivot.rotation.x = v.cover * Math.PI / 2;
+  v.sideDoor.rotation.y = v.cover * kSideDoorOpen;
+  v.platform.position.z = v.slide * kSlideTravel;
+  v.drone.visible = inj.drone_detected;
+  const is_nav_on = (t % 1.2) < 0.15;
+  for (const nav of v.navMats) {
+    nav.emissiveIntensity = 0.3;
+    if (is_nav_on) {
+      nav.emissiveIntensity = 4;
+    }
+  }
+
+  let pad = 0;
+  if (n.chg_on) {
+    pad = 0.8 + 0.8 * (0.5 + 0.5 * Math.sin(t * 5));
+  }
+  v.padMat.emissiveIntensity = pad;
+
+  const pattern = n.led_pattern;
+  v.ledMat.emissive.setHex(kLedColors[pattern] || kLedColors[0]);
+  v.ledMat.emissiveIntensity = 3 * ledLevel(pattern, t);
+
+  const is_inner = (n.light & 1) !== 0;
+  const is_outer = (n.light & 2) !== 0;
+  v.innerLight.intensity = 0;
+  v.ceilingPanel.material.emissiveIntensity = 0;
+  if (is_inner) {
+    v.innerLight.intensity = 1.5;
+    v.ceilingPanel.material.emissiveIntensity = 0.9;
+  }
+  v.outerLight.intensity = 0;
+  v.lampMat.emissiveIntensity = 0;
+  if (is_outer) {
+    v.outerLight.intensity = 30;
+    v.lampMat.emissiveIntensity = 4;
+  }
+
+  const is_indicator = (n.alarm & 2) !== 0;
+  let beacon = 0;
+  if (is_indicator) {
+    beacon = Math.max(0, Math.sin(t * 12));
+  }
+  v.beaconMat.emissiveIntensity = beacon * 4;
+  v.beaconLight.intensity = beacon * 5;
+
+  if ((n.climate_out & 4) !== 0) {
+    v.blades.rotation.x += dt * 16;
+  }
+  v.heaterMat.emissiveIntensity = 0;
+  if ((n.climate_out & 1) !== 0) {
+    v.heaterMat.emissiveIntensity = 3;
+  }
+  v.coolerMat.emissiveIntensity = 0;
+  if ((n.climate_out & 2) !== 0) {
+    v.coolerMat.emissiveIntensity = 3;
+  }
+
+  v.estop.position.x = kW / 2 + 0.057;
+  v.estopMat.emissiveIntensity = 0;
+  if (inj.estop) {
+    v.estop.position.x = kW / 2 + 0.04;
+    v.estopMat.emissiveIntensity = 1 + 0.8 * Math.sin(t * 8);
+  }
+  for (const b of v.buttons.slice(1)) {
+    b.mat.emissiveIntensity = 0;
+    if (inj[b.key]) {
+      b.mat.emissiveIntensity = 3;
+    }
+  }
+  v.water.visible = inj.flood;
+
+  let banner = "";
+  let color = "#ef6c00";
+  if (n.safe_hold) {
+    banner = "SAFE-HOLD";
+  }
+  if (n.fault !== "OK") {
+    banner = "FAULT " + n.fault;
+    color = "#ff5252";
+  }
+  const el = document.getElementById("s3d_banner");
+  el.textContent = banner;
+  el.style.color = color;
+}
 </script>
 </body>
 </html>
