@@ -346,6 +346,11 @@ class Mcu:
             code = icd.SLIDE_EXTEND
             if self.slide_pos >= 1.0:
                 code = icd.SLIDE_RETRACT
+        is_remote_motion = self.active is not None and self.active["seq"] != 0
+        if is_remote_motion:
+            # 현장 우선: SM 명령 모션을 ABORTED 로 끝내고 버튼 동작을 받는다
+            self.note("button %s preempts seq %d" % (key, self.active["seq"]))
+            self.abort_motion(2)
         reason = self.reject_reason(code, 0, 0)
         if reason != icd.OK:
             self.note("button %s ignored: %s" % (key, icd.REASON_NAMES.get(reason, hex(reason))))

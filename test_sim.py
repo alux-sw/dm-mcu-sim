@@ -152,6 +152,15 @@ mcu.inject["btn_slide"] = True
 ticks(mcu, kTicksSlide + 1)
 assert mcu.inputs[icd.SLIDE_STATE] == 0
 
+# 현장 우선: SM 모션 중 버튼 → SM 명령은 DONE ABORTED, 버튼 동작으로 넘어감
+cmd(mcu, 190, icd.COVER_CLOSE)
+ticks(mcu, 3)
+mcu.inject["btn_door"] = True
+ticks(mcu, 1)
+assert done(mcu) == (190, 2) and mcu.active is not None and mcu.active["seq"] == 0
+ticks(mcu, kTicksCover)
+assert mcu.inputs[icd.COVER_STATE] == 2
+
 # BMS 전원, 링크 끊김
 cmd(mcu, 20, icd.BMS_POWER_OFF)
 assert done(mcu) == (20, 0) and mcu.inputs[icd.BMS_PWR_STATE] == 0
