@@ -183,4 +183,18 @@ assert mcu.hb_timeout and mcu.safe_hold
 mcu.on_rx()
 assert not mcu.hb_timeout
 
+# 직접 설정: 내부 상태·보유 레지스터가 입력 레지스터로 이어진다. E-Stop 이 눌려 있으면 폴트는 다시 래치
+mcu.inject["estop"] = True
+ticks(mcu, 1)
+mcu.set_state({"fault_code": 0, "safe_hold": 0})
+ticks(mcu, 1)
+assert mcu.fault_code == icd.HI6
+mcu.inject["estop"] = False
+mcu.set_state({"fault_code": 0, "safe_hold": 0, "SET_LIGHT": 3})
+ticks(mcu, 1)
+assert mcu.fault_code == 0 and not mcu.safe_hold and mcu.inputs[icd.FAULT_CODE] == 0
+assert mcu.inputs[icd.LIGHT_STATE] == 3
+mcu.set_state({"SET_LED_PATTERN": 2})
+assert mcu.inputs[icd.LED_PATTERN] == 2
+
 print("test_sim: OK")

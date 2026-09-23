@@ -156,6 +156,10 @@
       레지스터 강제 (입력 레지스터 표의 값을 눌러 고친다) <button id="force_clear">전체 해제</button>
       <div id="force_list"></div>
     </div>
+    <details>
+      <summary>MCU 상태 직접 설정 — 내부 상태·보유 레지스터 (force 와 달리 시뮬 동작이 따라감)</summary>
+      <table id="set_tbl"></table>
+    </details>
   </section>
   <section>
     <h2>시뮬레이터 내부</h2>
@@ -512,6 +516,7 @@ function renderSim(s) {
     ["last_cmd_seq", n.last_cmd_seq],
   ]);
   renderForce(s.force || {});
+  renderSet(s);
   renderRegs(s.regs);
   setText("sim_log", s.log.slice().reverse().join("\n"));
   renderStation(s);
@@ -526,6 +531,35 @@ function renderForce(force) {
     list.innerHTML = keys.map(k => `<span class="force-chip" data-key="${k}">${k} = ${force[k]} ✕</span>`).join("");
   }
 }
+
+// 직접 설정 표: 행은 처음 한 번만 만들고 현재값 칸만 갱신한다 (입력칸이 200 ms 갱신에 지워지지 않게)
+function renderSet(s) {
+  const values = Object.assign({}, s.settable, s.holding);
+  const tbl = byId("set_tbl");
+  if (tbl.rows.length === 0) {
+    tbl.innerHTML = Object.keys(values).map(k =>
+      `<tr><td>${k}</td><td id="set_cur_${k}"></td><td><input id="set_in_${k}" size="6"> <button data-key="${k}">적용</button></td></tr>`).join("");
+  }
+  Object.keys(values).forEach(k => {
+    let v = values[k];
+    if (typeof v === "number") {
+      v = Math.round(v * 1e4) / 1e4;   // 소수는 넷째 자리까지 (레이아웃 유지)
+    }
+    setText("set_cur_" + k, String(v));
+  });
+}
+
+byId("set_tbl").addEventListener("click", e => {
+  const key = e.target.dataset.key;
+  if (key === undefined) {
+    return;
+  }
+  const raw = byId("set_in_" + key).value.trim();
+  if (raw === "") {
+    return;
+  }
+  postJson("/api/set", { [key]: Number(raw) });
+});
 
 byId("force_clear").addEventListener("click", () => postJson("/api/force", {}));
 byId("force_list").addEventListener("click", e => {

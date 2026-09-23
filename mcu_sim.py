@@ -36,6 +36,9 @@ kReadback = {
     icd.SET_LED_PATTERN: icd.LED_PATTERN,
 }
 kButtons = ("btn_door", "btn_slide", "btn_maint")
+# 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
+kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
+             "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int}
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "flood": False, "drone_detected": False, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
@@ -150,6 +153,11 @@ class Mcu:
         is_valid = all(self.is_value_ok(a, v) for a, v in values.items())
         if not is_valid:
             return mb.resp_exception(frame[1], mb.EX_ILLEGAL_VALUE)
+        self.apply_holding(values)
+        return mb.resp_write_ok(frame)
+
+    def apply_holding(self, values):
+        """보유 레지스터 갱신과 그 효과 (되읽기·정비 모드·명령 접수). 마스터 쓰기와 직접 설정이 같이 쓴다"""
         self.holding.update(values)
         for a in values:
             if a in kReadback:
@@ -158,7 +166,6 @@ class Mcu:
             self.set_maint(values[icd.SET_MAINT_MODE], 1)
         if icd.CMD_SEQ in values:
             self.on_command()
-        return mb.resp_write_ok(frame)
 
     def is_value_ok(self, addr, value):
         if addr in kValueMax:
@@ -685,6 +692,7 @@ class Mcu:
                     "maint_source": icd.MAINT_SOURCE_NAMES[self.maint_source],
                 },
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
+                "settable": {k: getattr(self, k) for k in kSettable},
                 "regs": {name: self.signed_input(a) for a, name in icd.INPUT_NAMES.items()},
                 "log": list(self.log),
             }
@@ -735,6 +743,20 @@ class Mcu:
                     self.note("inject %s=%s" % (key, self.inject[key]))
         return self.snapshot()
 
+    def set_state(self, body):
+        """본문 예: {"fault_code": 0, "SET_LIGHT": 3}. 내부 상태나 보유 레지스터를 그 값으로 바꿉니다 (force 와 달리 시뮬 동작이 따라감)"""
+        holding_addr = {name: a for a, name in icd.HOLDING_NAMES.items()}
+        with self.lock:
+            for key, value in body.items():
+                if key in kSettable:
+                    setattr(self, key, kSettable[key](value))
+                    self.note("set %s=%s" % (key, getattr(self, key)))
+                    continue
+                if key in holding_addr:
+                    self.note("set %s=%d" % (key, int(value) & 0xFFFF))
+                    self.apply_holding({holding_addr[key]: int(value) & 0xFFFF})
+        return self.snapshot()
+
 
 def serve_serial(mcu, fd):
     while True:
@@ -766,6 +788,7 @@ def main():
         ("GET", "/api/state"): lambda body: mcu.snapshot(),
         ("POST", "/api/inject"): mcu.set_inject,
         ("POST", "/api/force"): mcu.set_force,
+        ("POST", "/api/set"): mcu.set_state,
         ("GET", "/api/icd"): lambda body: icd.describe(),
     }, html_path=kGuiFile)
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
