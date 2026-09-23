@@ -692,9 +692,11 @@ const kSideY1 = 0.66;
 const kLedColors = [0x222222, 0x2e7d32, 0xffb300, 0x1e88e5, 0x00acc1, 0xef6c00, 0xd32f2f, 0x8e24aa, 0x43a047, 0xeeeeee];
 const kLedBlinkSec = [0, 0, 0.6, 0, 1.0, 0.5, 0.25, 0, 0, 0.3];
 const kLedBreathe = 8;
-const kHdri = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/kloofendal_48d_partly_cloudy_puresky_1k.hdr";
+const kHdri = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/empty_warehouse_01_2k.hdr";
+const kSkyHeight = 2.4;
+const kSkyRadius = 40;
 const kTex = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/";
-const kHint = "드래그: 회전 · 휠: 확대 · 우클릭 드래그: 이동 · E-Stop 클릭 가능 · 하늘/바닥: Poly Haven (CC0)";
+const kHint = "드래그: 회전 · 휠: 확대 · 우클릭 드래그: 이동 · 패널 버튼 클릭 가능 · 창고 배경·바닥: Poly Haven (CC0)";
 
 const box = document.getElementById("station3d");
 let THREE = null;
@@ -725,6 +727,7 @@ async function init() {
       import("three/addons/postprocessing/RenderPass.js"),
       import("three/addons/postprocessing/UnrealBloomPass.js"),
       import("three/addons/postprocessing/OutputPass.js"),
+      import("three/addons/objects/GroundedSkybox.js"),
     ]);
     build(Object.assign({}, ...mods));
     document.getElementById("s3d_hint").textContent = kHint;
@@ -803,6 +806,64 @@ function label(text, color, x, y, z, width, parent) {
   return plane;
 }
 
+// 노랑·검정 빗금 테두리 (가운데는 비움)
+function hazardTexture() {
+  return canvasTexture(1024, 1300, (g, w, h) => {
+    const band = 56;
+    g.save();
+    g.beginPath();
+    g.rect(0, 0, w, h);
+    g.rect(band, band, w - band * 2, h - band * 2);
+    g.clip("evenodd");
+    g.fillStyle = "#f2b705";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#1a1a1a";
+    for (let i = -h; i < w + h; i += 80) {
+      g.beginPath();
+      g.moveTo(i, 0);
+      g.lineTo(i + 40, 0);
+      g.lineTo(i + 40 - h, h);
+      g.lineTo(i - h, h);
+      g.fill();
+    }
+    g.restore();
+  });
+}
+
+// 팔레트 랙 한 칸 (파란 기둥·주황 빔·상자). 상자 크기는 고정 시드로 매번 같게
+function rack(x, z, parent) {
+  const kLen = 2.6;
+  const kDepth = 1.0;
+  const upright = mat(0x1f4e9c, 0.5, 0.45);
+  const beam = mat(0xf57c00, 0.4, 0.45);
+  const deck = mat(0x6b7078, 0.6, 0.5);
+  const card = mat(0xb98a5a, 0, 0.85);
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  parent.add(g);
+  for (const px of [-kLen / 2, kLen / 2]) {
+    for (const pz of [-kDepth / 2, kDepth / 2]) {
+      cube(0.08, 3.0, 0.08, upright, px, 1.5, pz, g);
+    }
+  }
+  let seed = Math.abs(Math.round(x * 97 + z * 31)) + 7;
+  const rand = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  for (const y of [0.15, 1.15, 2.15]) {
+    for (const pz of [-kDepth / 2, kDepth / 2]) {
+      cube(kLen, 0.1, 0.05, beam, 0, y, pz, g);
+    }
+    cube(kLen - 0.06, 0.02, kDepth, deck, 0, y + 0.06, 0, g);
+    for (let bx = -kLen / 2 + 0.35; bx < kLen / 2 - 0.2; bx += 0.62) {
+      const bw = 0.42 + rand() * 0.15;
+      const bh = 0.3 + rand() * 0.45;
+      cube(bw, bh, 0.6 + rand() * 0.25, card, bx, y + 0.07 + bh / 2, 0, g);
+    }
+  }
+}
+
 function logoTexture() {
   return canvasTexture(1024, 256, (g, w, h) => {
     g.fillStyle = "#1c2430";
@@ -845,17 +906,20 @@ function build(m) {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.8;
+  renderer.toneMappingExposure = 0.62;
   box.prepend(renderer.domElement);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xaebfd0);
-  scene.fog = new THREE.Fog(0xaebfd0, 14, 45);
+  scene.background = new THREE.Color(0x17191c);
+  // 창고 HDRI: 반사광으로 쓰고, 바닥에 투영한 스카이박스로 배경을 만든다
   new m.RGBELoader().load(kHdri, hdr => {
     hdr.mapping = THREE.EquirectangularReflectionMapping;
     scene.environment = hdr;
-    scene.background = hdr;
-    scene.backgroundIntensity = 0.85;
+    scene.environmentIntensity = 0.8;
+    const sky = new m.GroundedSkybox(hdr, kSkyHeight, kSkyRadius);
+    sky.position.y = kSkyHeight - 0.01;
+    sky.material.color.setScalar(0.65);
+    scene.add(sky);
   });
 
   const camera = new THREE.PerspectiveCamera(36, 2, 0.05, 200);
@@ -873,24 +937,35 @@ function build(m) {
   composer.addPass(bloom);
   composer.addPass(new m.OutputPass());
 
-  scene.add(new THREE.HemisphereLight(0xdfe9ff, 0x3a3a3a, 0.35));
-  const sun = new THREE.DirectionalLight(0xfff4e0, 2.2);
-  sun.position.set(4, 6, 3);
-  sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.radius = 4;
-  sun.shadow.bias = -0.0004;
-  Object.assign(sun.shadow.camera, { left: -3.5, right: 3.5, top: 3.5, bottom: -3.5, far: 20 });
-  scene.add(sun);
+  // 천장 고천장등 두 개 (앞쪽 것이 그림자를 드리움)
+  scene.add(new THREE.HemisphereLight(0xcfd8e6, 0x202020, 0.25));
+  for (const [x, z, is_shadow] of [[1.5, 2.2, true], [-2.0, -1.5, false]]) {
+    const bay = new THREE.SpotLight(0xfff1dc, 55, 0, Math.PI / 5, 0.6, 2);
+    bay.position.set(x, 6, z);
+    bay.target.position.set(0, 0, 0.5);
+    bay.castShadow = is_shadow;
+    bay.shadow.mapSize.set(2048, 2048);
+    bay.shadow.radius = 4;
+    bay.shadow.bias = -0.0004;
+    scene.add(bay, bay.target);
+  }
 
   v = { RoundedBoxGeometry: m.RoundedBoxGeometry };
 
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), pbr("concrete_floor_02", 40));
-  ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
-  scene.add(ground);
-  const padMatGround = pbr("concrete_tiles", 2);
-  rbox(3.0, 0.06, 3.8, 0.02, padMatGround, 0, 0.03, 0.7, scene);
+  // 바닥: 그림자만 받는 투명판 + 스테이션 자리 콘크리트 슬래브와 안전 빗금 테두리
+  const shadowFloor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), new THREE.ShadowMaterial({ opacity: 0.5 }));
+  shadowFloor.rotation.x = -Math.PI / 2;
+  shadowFloor.position.y = 0.002;
+  shadowFloor.receiveShadow = true;
+  scene.add(shadowFloor);
+  rbox(3.0, 0.06, 3.8, 0.02, pbr("concrete_floor_02", 2), 0, 0.03, 0.7, scene);
+  const hazard = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 3.8), new THREE.MeshStandardMaterial({ map: hazardTexture(), transparent: true, roughness: 0.8 }));
+  hazard.rotation.x = -Math.PI / 2;
+  hazard.position.set(0, 0.062, 0.7);
+  hazard.receiveShadow = true;
+  scene.add(hazard);
+  rack(-2.4, -3.3, scene);
+  rack(0.6, -3.3, scene);
 
   const white = mat(0xe6eaef, 0.2, 0.42, { envMapIntensity: 0.8 });
   const dark = mat(0x262b33, 0.55, 0.45);
