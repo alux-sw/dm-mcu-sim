@@ -340,7 +340,7 @@ class Mcu:
             return
         self.fault_code = code
         self.abort_motion(4)
-        self.note("FAULT latched %s" % icd.REASON_NAMES.get(code, hex(code)))
+        self.note("FAULT latched %d" % code)
 
     def on_button(self, key):
         if key == "btn_maint":

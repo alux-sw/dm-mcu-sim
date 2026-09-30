@@ -36,6 +36,10 @@
   .view-toggle button.on { background: #1e88e5; border-color: #1e88e5; }
   #station3d { position: relative; width: 100%; max-width: 1100px; height: 440px; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #17181b; }
   #station3d canvas { display: block; }
+  .lock-bar { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 4px 0 6px; font-size: 13px; color: #9aa; }
+  .lock-bar .lock-on { color: #ffb74d; font-weight: bold; }
+  .lock-bar .fault-on { color: #ff5252; font-weight: bold; }
+  #s3d_interlock { position: absolute; top: 46px; width: 100%; text-align: center; font-size: 15px; color: #ffb74d; pointer-events: none; text-shadow: 0 0 8px #000; }
   #s3d_banner { position: absolute; top: 10px; width: 100%; text-align: center; font-size: 26px; font-weight: bold; pointer-events: none; text-shadow: 0 0 10px #000; }
   #s3d_hint { position: absolute; bottom: 8px; left: 12px; color: #9aa; font-size: 11px; pointer-events: none; }
   svg { width: 100%; max-width: 1100px; display: block; margin: 0 auto; background: #17181b; border-radius: 6px; }
@@ -71,6 +75,7 @@
   #estop_btn { fill: #7f1d1d; stroke: #a33; cursor: pointer; }
   #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
   #banner { font-size: 26px; font-weight: bold; }
+  #interlock_2d { font-size: 15px; fill: #ffb74d; }
   @keyframes blink { 50% { opacity: .15; } }
   @keyframes breathe { 50% { opacity: .3; } }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -91,8 +96,13 @@
       <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
       <span id="status_line"></span>
     </div>
+    <div class="lock-bar">
+      <span id="interlock_line" title="HARD_BLOCK: 지금 성립 중인 하드 인터락. 조건이 풀리면 저절로 꺼진다"></span>
+      <span id="fault_line" title="FAULT_CODE: 래치된 폴트. 원인이 사라져도 CLEAR_FAULT 전까지 남고 모션을 막는다"></span>
+    </div>
     <svg id="station2d" viewBox="0 0 900 340">
       <text id="banner" x="450" y="44" text-anchor="middle"></text>
+      <text id="interlock_2d" x="450" y="70" text-anchor="middle"><tspan id="interlock_2d_text"></tspan><title>HARD_BLOCK: 지금 성립 중인 하드 인터락. 조건이 풀리면 저절로 꺼진다</title></text>
       <text id="env_text" x="885" y="24" text-anchor="end"></text>
       <text id="maint_text" x="885" y="44" text-anchor="end" fill="#ce93d8"></text>
       <text id="hb_text" x="15" y="24"></text>
@@ -147,7 +157,7 @@
       <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
       <text x="60" y="282" font-size="10">정비</text>
     </svg>
-    <div id="station3d" class="hide"><div id="s3d_banner"></div><div id="s3d_hint">3D 불러오는 중…</div></div>
+    <div id="station3d" class="hide"><div id="s3d_banner"></div><div id="s3d_interlock"></div><div id="s3d_hint">3D 불러오는 중…</div></div>
   </section>
   <section>
     <h2>주입</h2>
@@ -183,6 +193,40 @@
   </section>
 </main>
 <script>
+// 하드 인터락 (HARD_BLOCK bit0~5) — 지금 무엇을 못 하는지, 조건이 풀리면 저절로 꺼짐
+const HI_TEXT = ["HI-1 커버 폐쇄 금지", "HI-2 슬라이드 전개 금지", "HI-3 슬라이드 전개 금지(충전 중)", "HI-4 모션 금지(과전류)", "HI-5 충전 ON 금지", "HI-6 모션 금지(E-Stop)"];
+// 래치 폴트 (FAULT_CODE) 원인 — CLEAR_FAULT 전까지 남음
+const FAULT_CAUSE = { 4: "구동부 과전류/스톨", 6: "E-Stop", 32: "모션 시간 초과", 33: "리미트 스위치 모순" };
+
+function renderLocks(s) {
+  const codes = [];
+  const texts = [];
+  for (let i = 0; i < HI_TEXT.length; i++) {
+    if ((s.regs.HARD_BLOCK & (1 << i)) !== 0) {
+      codes.push("HI-" + (i + 1));
+      texts.push(HI_TEXT[i]);
+    }
+  }
+  let codeText = "";
+  let lineText = "현재 인터락: 없음";
+  if (codes.length > 0) {
+    codeText = "인터락 " + codes.join(" · ");
+    lineText = "현재 인터락: " + texts.join(" · ");
+  }
+  setText("interlock_2d_text", codeText);
+  document.getElementById("s3d_interlock").textContent = codeText;
+  setText("interlock_line", lineText);
+  setClass("interlock_line", "lock-on", codes.length > 0);
+  const code = s.regs.FAULT_CODE;
+  const is_fault = code !== 0;
+  let faultText = "래치 폴트: 없음";
+  if (is_fault) {
+    faultText = "래치 폴트: " + code + " — 원인 " + (FAULT_CAUSE[code] || "알 수 없음") + ". 원인이 사라져도 CLEAR_FAULT 로 해제해야 풀림";
+  }
+  setText("fault_line", faultText);
+  setClass("fault_line", "fault-on", is_fault);
+}
+
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
 const INJECT_BOOLS = ["estop", "ac_ok", "flood", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
 const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
@@ -449,8 +493,8 @@ function renderStation(s) {
   if (n.safe_hold) {
     banner = "SAFE-HOLD";
   }
-  if (n.fault !== "OK") {
-    banner = "FAULT " + n.fault;
+  if (s.regs.FAULT_CODE !== 0) {
+    banner = "FAULT " + s.regs.FAULT_CODE;
     bannerColor = "#d32f2f";
   }
   setText("banner", banner);
@@ -465,6 +509,7 @@ function renderStation(s) {
     }
   }
   setText("status_line", status);
+  renderLocks(s);
   if (window.station3dUpdate) {
     window.station3dUpdate(s);
   }
@@ -552,7 +597,7 @@ function renderSim(s) {
     ["sim time", n.time + " s"],
     ["cover / slide", `${n.cover_pos} / ${n.slide_pos}`],
     ["active", active],
-    ["safe_hold / fault", `${n.safe_hold} / ${n.fault}`],
+    ["safe_hold / fault", `${n.safe_hold} / ${s.regs.FAULT_CODE}`],
     ["hb_timeout / hb_age", `${n.hb_timeout} / ${n.hb_age}s`],
     ["chg_on / bms_pwr", `${n.chg_on} / ${n.bms_pwr}`],
     ["maint", `${n.maint_active} / ${n.maint_source}`],
@@ -1348,8 +1393,8 @@ function apply(s, dt, t) {
   if (n.safe_hold) {
     banner = "SAFE-HOLD";
   }
-  if (n.fault !== "OK") {
-    banner = "FAULT " + n.fault;
+  if (s.regs.FAULT_CODE !== 0) {
+    banner = "FAULT " + s.regs.FAULT_CODE;
     color = "#ff5252";
   }
   const el = document.getElementById("s3d_banner");
