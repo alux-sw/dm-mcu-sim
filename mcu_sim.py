@@ -24,6 +24,8 @@ kChargerDefaultLimit10mA = 1000
 kChargerVoltage10mV = 5040
 kChargerCurrent10mA = 500
 kFwVersion = (1, 1, 0)
+kBmsChargePctPerSec = 0.5   # 충전 중 잔량이 오르는 속도 (%/s)
+kBmsDesignCapacitymAh = 10000
 kLogLen = 100
 kValueMax = {
     icd.SET_CLIMATE_MODE: 1, icd.SET_LIGHT: 3, icd.SET_ALARM_OUT: 3,
@@ -38,7 +40,9 @@ kReadback = {
 kButtons = ("btn_door", "btn_slide", "btn_maint")
 # 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
 kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
-             "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int}
+             "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
+             "bms_rsoc": float, "bms_voltage_mv": int, "bms_cell_mv": int, "bms_temp_c": float,
+             "bms_cycle_count": int, "bms_charging_current_ma": int}
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "flood": False, "drone_detected": False, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
@@ -102,6 +106,12 @@ class Mcu:
         self.chg_limit_arg = 0
         self.bms_pwr = 1
         self.bms_lost_at = None
+        self.bms_rsoc = 80.0
+        self.bms_voltage_mv = 24600
+        self.bms_cell_mv = 4100
+        self.bms_temp_c = 25.0
+        self.bms_cycle_count = 12
+        self.bms_charging_current_ma = 5000
         self.maint_active = 0
         self.maint_source = 0
         self.btn_release_at = {}
@@ -616,28 +626,29 @@ class Mcu:
         current_ma = -200
         if self.chg_on:
             current_ma = inp[icd.CHG_CURRENT] * 10
+            self.bms_rsoc = min(100.0, self.bms_rsoc + kBmsChargePctPerSec * kTickSec)
         inp[icd.BMS_LINK] = 1
         inp[icd.BMS_AGE] = 0
         inp[icd.BMS_BATTERY_STATUS] = 0x00C0
-        inp[icd.BMS_VOLTAGE] = 24600
+        inp[icd.BMS_VOLTAGE] = self.bms_voltage_mv
         inp[icd.BMS_CURRENT_HI] = u16(current_ma >> 16)
         inp[icd.BMS_CURRENT_LO] = u16(current_ma)
-        inp[icd.BMS_RSOC] = 80
-        inp[icd.BMS_REMAIN] = 8000
-        inp[icd.BMS_TEMP] = 2980
+        inp[icd.BMS_RSOC] = int(self.bms_rsoc)
+        inp[icd.BMS_REMAIN] = int(kBmsDesignCapacitymAh * self.bms_rsoc / 100)
+        inp[icd.BMS_TEMP] = int(round((self.bms_temp_c + 273.15) * 10))
         for i in range(6):
-            inp[icd.BMS_CELL1 + i] = 4100
-        inp[icd.BMS_CYCLE_COUNT] = 12
+            inp[icd.BMS_CELL1 + i] = self.bms_cell_mv
+        inp[icd.BMS_CYCLE_COUNT] = self.bms_cycle_count
         inp[icd.BMS_FAULT_FLAGS_HI] = 0
         inp[icd.BMS_FAULT_FLAGS_LO] = 0
         inp[icd.BMS_PWR_STATE] = self.bms_pwr
         inp[icd.BMS_CHG_FET] = 1
         inp[icd.BMS_DSG_FET] = self.bms_pwr
-        inp[icd.BMS_CHARGING_CURRENT] = 5000
+        inp[icd.BMS_CHARGING_CURRENT] = self.bms_charging_current_ma
         inp[icd.BMS_CHARGING_VOLTAGE] = 25200
         inp[icd.BMS_SNAPSHOT_AGE] = 50
         inp[icd.BMS_TEMP_SHUNT] = 250
-        inp[icd.BMS_TEMP_CELL] = 250
+        inp[icd.BMS_TEMP_CELL] = u16(int(round(self.bms_temp_c * 10)))
         inp[icd.BMS_TEMP_FET] = 260
         inp[icd.BMS_TEMP_INT] = 270
         inp[icd.BMS_PF_STATUS_HI] = 0
@@ -645,11 +656,11 @@ class Mcu:
         inp[icd.BMS_SAFETY_STATUS_HI] = 0
         inp[icd.BMS_SAFETY_STATUS_LO] = 0
         inp[icd.BMS_AVG_TIME_TO_FULL] = 30
-        inp[icd.BMS_CELL_MAX] = 4100
-        inp[icd.BMS_CELL_MIN] = 4100
+        inp[icd.BMS_CELL_MAX] = self.bms_cell_mv
+        inp[icd.BMS_CELL_MIN] = self.bms_cell_mv
         inp[icd.BMS_SERIAL_NUMBER] = 1234
         inp[icd.BMS_MANUFACTURE_DATE] = ((2026 - 1980) << 9) | (9 << 5) | 1
-        inp[icd.BMS_DESIGN_CAPACITY] = 10000
+        inp[icd.BMS_DESIGN_CAPACITY] = kBmsDesignCapacitymAh
         inp[icd.BMS_DESIGN_VOLTAGE] = 22200
         inp[icd.BMS_FULL_CHARGE_CAPACITY] = 9800
         inp[icd.BMS_DEVICE_TYPE] = 1
