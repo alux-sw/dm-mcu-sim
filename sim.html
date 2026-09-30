@@ -72,6 +72,7 @@
   .pbtn { fill: #555; stroke: #888; cursor: pointer; }
   .pbtn:hover { stroke: #fff; }
   .pbtn.on { fill: #ffb300; }
+  .pbtn.maint-on { fill: #ab47bc; filter: drop-shadow(0 0 6px #ce93d8); }
   #estop_btn { fill: #7f1d1d; stroke: #a33; cursor: pointer; }
   #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
   #banner { font-size: 26px; font-weight: bold; }
@@ -476,6 +477,7 @@ function renderStation(s) {
   setClass("fan", "spin", (n.climate_out & 4) !== 0);
   setClass("estop_btn", "on", inj.estop);
   INJECT_PULSES.forEach(k => setClass(k, "on", inj[k]));
+  setClass("btn_maint", "maint-on", n.maint_active === 1);
   setClass("flood", "hide", !inj.flood);
   setText("env_text", `내부 ${inj.temp_in.toFixed(1)} ℃ / ${inj.hum_in.toFixed(0)} %   접점 ${inj.contact_temp.toFixed(1)} ℃`);
   let maintText = "";
@@ -1382,7 +1384,8 @@ function apply(s, dt, t) {
   }
   for (const b of v.buttons.slice(1)) {
     b.mat.emissiveIntensity = 0;
-    if (inj[b.key]) {
+    const is_maint_lit = b.key === "btn_maint" && n.maint_active === 1;
+    if (inj[b.key] || is_maint_lit) {
       b.mat.emissiveIntensity = 3;
     }
   }
