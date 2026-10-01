@@ -11,7 +11,7 @@ import modbus_rtu as mb
 import webapi
 
 kDefaultPort = "/dev/ttyUSB0"
-kHttpPort = 8881
+kHttpPort = int(os.environ.get("MCU_SIM_HTTP_PORT", "8881"))
 kGuiFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim.html")
 kTickSec = 0.1
 kCoverMoveSec = 3.0
