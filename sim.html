@@ -589,9 +589,9 @@ function setView(is_3d) {
 byId("view2d").addEventListener("click", () => setView(false));
 byId("view3d").addEventListener("click", () => setView(true));
 window.addEventListener("DOMContentLoaded", () => {
-  let saved = "2d";
+  let saved = "3d";
   try {
-    saved = localStorage.getItem("stationView") || "2d";
+    saved = localStorage.getItem("stationView") || "3d";
   } catch (e) {
   }
   if (saved === "3d") {
