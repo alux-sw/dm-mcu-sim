@@ -1,7 +1,7 @@
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 kCorsHeaders = {
     "Access-Control-Allow-Origin": "*",
@@ -10,7 +10,8 @@ kCorsHeaders = {
 }
 
 
-def serve(port, routes, html_path=None):
+# streams: 경로 → fn(handler, query) — 응답을 직접 길게 써 내려가는 GET (영상 등)
+def serve(port, routes, html_path=None, streams=None):
     class Handler(BaseHTTPRequestHandler):
         def send(self, code, payload, content_type):
             self.send_response(code)
@@ -28,7 +29,12 @@ def serve(port, routes, html_path=None):
             self.send(204, b"", "text/plain")
 
         def do_GET(self):
-            is_root = urlsplit(self.path).path == "/"
+            parts = urlsplit(self.path)
+            stream = (streams or {}).get(parts.path)
+            if stream is not None:
+                stream(self, parse_qs(parts.query))
+                return
+            is_root = parts.path == "/"
             if is_root and html_path is not None:
                 with open(html_path, "rb") as f:
                     self.send(200, f.read(), "text/html; charset=utf-8")
