@@ -77,12 +77,19 @@
   #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
   .station-views { display: flex; gap: 8px; }
   .station-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #cam_panes.hide { display: none; }
+  .station-views:has(#cam_panes.hide) :is(#station3d, svg) { max-width: none; }
   #cam_panes { display: flex; flex-direction: column; gap: 8px; width: 380px; }
   .cam-pane { border: 1px solid #444; border-radius: 6px; overflow: hidden; background: #17181b; }
   .cam-head { display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: #2b2d31; }
   .cam-head span:first-child { flex: 1; }
   .cam-view { height: 230px; color: #9aa; font-size: 11px; }
   .cam-view canvas { display: block; }
+  .cam-src { display: flex; gap: 4px; padding: 3px 6px; background: #2b2d31; border-top: 1px solid #3a3c40; }
+  .cam-src select { width: 120px; }
+  .cam-src input { flex: 1; width: auto; min-width: 0; }
+  .cam-src button { margin: 0; }
+  .cam-live { width: 100%; height: 230px; object-fit: contain; background: #000; vertical-align: top; }
   .cam2d { cursor: pointer; }
   .cam2d .cam-body { fill: #3b3f46; stroke: #888; }
   .cam2d:hover .cam-body { stroke: #4fc3f7; stroke-width: 2.5; filter: drop-shadow(0 0 4px #4fc3f7); }
@@ -190,11 +197,15 @@
     <div id="cam_panes" class="hide">
       <div id="pane_ext" class="cam-pane hide">
         <div class="cam-head"><span>외부 카메라</span><button data-cam-close="ext">✕</button></div>
+        <div class="cam-src"><select data-cam-preset="ext"></select><input data-cam-url="ext" placeholder="rtsp:// 주소 (비우면 시뮬레이션 3D)"><button data-cam-apply="ext">적용</button></div>
         <div id="camview_ext" class="cam-view">3D 불러오는 중…</div>
+        <img id="camimg_ext" class="cam-live hide" alt="">
       </div>
       <div id="pane_in" class="cam-pane hide">
         <div class="cam-head"><span>내부 카메라</span><button data-cam-close="in">✕</button></div>
+        <div class="cam-src"><select data-cam-preset="in"></select><input data-cam-url="in" placeholder="rtsp:// 주소 (비우면 시뮬레이션 3D)"><button data-cam-apply="in">적용</button></div>
         <div id="camview_in" class="cam-view">3D 불러오는 중…</div>
+        <img id="camimg_in" class="cam-live hide" alt="">
       </div>
     </div>
     </div>
@@ -719,14 +730,57 @@ byId("rc_delay_go").addEventListener("click", () => {
   setText("rc_msg", msg);
 });
 
-// 카메라 (외부·내부): 누르면 옆에 카메라 화면
-window.camState = { ext: { is_open: false }, in: { is_open: false } };
+// 카메라 (외부·내부): 누르면 옆에 카메라 화면. 주소가 비면 시뮬 3D 시점, rtsp 주소면 실제 카메라 (서버가 MJPEG 로 바꿔 보냄)
+const CAM_PRESETS = [["시뮬레이션 (3D)", ""], ["IP 카메라 .248", "rtsp://admin:Alux2026!%40@100.88.48.248:554/stream1"]];
+const CAM_DEFAULT_URL = CAM_PRESETS[1][1];
+window.camState = { ext: { is_open: false, url: CAM_DEFAULT_URL }, in: { is_open: false, url: CAM_DEFAULT_URL } };
+
+document.querySelectorAll("[data-cam-preset]").forEach(sel => {
+  sel.innerHTML = CAM_PRESETS.map(p => `<option value="${escapeAttr(p[1])}">${p[0]}</option>`).join("");
+  sel.value = CAM_DEFAULT_URL;
+});
+document.querySelectorAll("[data-cam-url]").forEach(input => { input.value = CAM_DEFAULT_URL; });
+
+// 입력칸의 주소를 그 카메라 창에 적용 (프리셋 목록에 있으면 목록도 맞춤)
+function applyCamUrl(key) {
+  const url = document.querySelector(`[data-cam-url="${key}"]`).value.trim();
+  window.camState[key].url = url;
+  const sel = document.querySelector(`[data-cam-preset="${key}"]`);
+  const is_preset = CAM_PRESETS.some(p => p[1] === url);
+  if (is_preset) {
+    sel.value = url;
+  }
+  renderCams();
+}
+
+// 실제 카메라 영상: 창이 열려 있고 주소가 있을 때만 받는다 (src 를 지우면 서버 쪽 변환도 끝남)
+function renderLive(key) {
+  const c = window.camState[key];
+  const is_live = c.is_open && c.url !== "";
+  setClass("camview_" + key, "hide", is_live);
+  setClass("camimg_" + key, "hide", !is_live);
+  let src = "";
+  if (is_live) {
+    src = "/api/cam.mjpg?url=" + encodeURIComponent(c.url);
+  }
+  const img = byId("camimg_" + key);
+  if (img.dataset.src === src) {
+    return;
+  }
+  img.dataset.src = src;
+  if (src === "") {
+    img.removeAttribute("src");
+  } else {
+    img.src = src;
+  }
+}
 
 function renderCams() {
   let is_any = false;
   Object.keys(window.camState).forEach(k => {
     const c = window.camState[k];
     setClass("pane_" + k, "hide", !c.is_open);
+    renderLive(k);
     if (c.is_open) {
       is_any = true;
     }
@@ -745,8 +799,25 @@ byId("cam_panes").addEventListener("click", e => {
   const close = e.target.dataset.camClose;
   if (close) {
     window.camState[close].is_open = false;
+    renderCams();
   }
-  renderCams();
+  const apply = e.target.dataset.camApply;
+  if (apply) {
+    applyCamUrl(apply);
+  }
+});
+byId("cam_panes").addEventListener("change", e => {
+  const key = e.target.dataset.camPreset;
+  if (key) {
+    document.querySelector(`[data-cam-url="${key}"]`).value = e.target.value;
+    applyCamUrl(key);
+  }
+});
+byId("cam_panes").addEventListener("keydown", e => {
+  const key = e.target.dataset.camUrl;
+  if (key && e.key === "Enter") {
+    applyCamUrl(key);
+  }
 });
 
 bindInject(document.querySelector(".station-bar"));
@@ -1525,7 +1596,8 @@ function frame() {
 
 // 열린 카메라 창에 그 카메라 시점을 그린다 (창마다 렌더러 하나, 처음 열 때 만듦)
 function renderCam(c) {
-  if (!window.camState[c.key].is_open) {
+  const st = window.camState[c.key];
+  if (!st.is_open || st.url !== "") {
     return;
   }
   const el = document.getElementById("camview_" + c.key);

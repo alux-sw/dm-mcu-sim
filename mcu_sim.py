@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 
+import camstream
 import icd
 import modbus_rtu as mb
 import webapi
@@ -801,7 +802,7 @@ def main():
         ("POST", "/api/force"): mcu.set_force,
         ("POST", "/api/set"): mcu.set_state,
         ("GET", "/api/icd"): lambda body: icd.describe(),
-    }, html_path=kGuiFile)
+    }, html_path=kGuiFile, streams={"/api/cam.mjpg": camstream.mjpeg})
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
     next_at = time.monotonic()
     while True:
