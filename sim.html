@@ -34,8 +34,8 @@
   .station-bar { display: flex; gap: 18px; align-items: center; margin-bottom: 4px; }
   .view-toggle button { margin: 0; }
   .view-toggle button.on { background: #1e88e5; border-color: #1e88e5; }
-  #station3d { position: relative; width: 100%; max-width: 1100px; height: 440px; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #17181b; }
-  #station3d canvas { display: block; }
+  #station3d { position: relative; width: 100%; max-width: 1100px; min-height: 440px; flex: 1; margin: 0 auto; border-radius: 6px; overflow: hidden; background: #17181b; }
+  #station3d canvas { display: block; position: absolute; top: 0; left: 0; }
   .lock-bar { display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 4px 0 6px; font-size: 13px; color: #9aa; }
   .lock-bar .lock-on { color: #ffb74d; font-weight: bold; }
   .lock-bar .fault-on { color: #ff5252; font-weight: bold; }
@@ -75,6 +75,24 @@
   .pbtn.maint-on { fill: #ab47bc; filter: drop-shadow(0 0 6px #ce93d8); }
   #estop_btn { fill: #7f1d1d; stroke: #a33; cursor: pointer; }
   #estop_btn.on { fill: #ff1744; stroke: #fff; stroke-width: 3; }
+  .station-views { display: flex; gap: 8px; }
+  .station-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #cam_panes.hide { display: none; }
+  .station-views:has(#cam_panes.hide) :is(#station3d, svg) { max-width: none; }
+  #cam_panes { display: flex; flex-direction: column; gap: 8px; width: 380px; }
+  .cam-pane { border: 1px solid #444; border-radius: 6px; overflow: hidden; background: #17181b; }
+  .cam-head { display: flex; align-items: center; gap: 6px; padding: 3px 6px; background: #2b2d31; }
+  .cam-head span:first-child { flex: 1; }
+  .cam-view { height: 230px; color: #9aa; font-size: 11px; }
+  .cam-view canvas { display: block; }
+  .cam-src { display: flex; gap: 4px; padding: 3px 6px; background: #2b2d31; border-top: 1px solid #3a3c40; }
+  .cam-src select { width: 120px; }
+  .cam-src input { flex: 1; width: auto; min-width: 0; }
+  .cam-src button { margin: 0; }
+  .cam-live { width: 100%; height: 230px; object-fit: contain; background: #000; vertical-align: top; }
+  .cam2d { cursor: pointer; }
+  .cam2d .cam-body { fill: #3b3f46; stroke: #888; }
+  .cam2d:hover .cam-body { stroke: #4fc3f7; stroke-width: 2.5; filter: drop-shadow(0 0 4px #4fc3f7); }
   #banner { font-size: 26px; font-weight: bold; }
   #interlock_2d { font-size: 15px; fill: #ffb74d; }
   @keyframes blink { 50% { opacity: .15; } }
@@ -101,6 +119,8 @@
       <span id="interlock_line" title="HARD_BLOCK: 지금 성립 중인 하드 인터락. 조건이 풀리면 저절로 꺼진다"></span>
       <span id="fault_line" title="FAULT_CODE: 래치된 폴트. 원인이 사라져도 CLEAR_FAULT 전까지 남고 모션을 막는다"></span>
     </div>
+    <div class="station-views">
+    <div class="station-main">
     <svg id="station2d" viewBox="0 0 900 340">
       <text id="banner" x="450" y="44" text-anchor="middle"></text>
       <text id="interlock_2d" x="450" y="70" text-anchor="middle"><tspan id="interlock_2d_text"></tspan><title>HARD_BLOCK: 지금 성립 중인 하드 인터락. 조건이 풀리면 저절로 꺼진다</title></text>
@@ -157,8 +177,38 @@
       <text x="60" y="254" font-size="10">슬라이드</text>
       <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
       <text x="60" y="282" font-size="10">정비</text>
+      <g id="cam2d_ext" class="cam2d">
+        <title>외부 카메라 (클릭: 카메라 화면)</title>
+        <rect class="cam-body" x="548" y="80" width="4" height="22"/>
+        <rect class="cam-body" x="548" y="78" width="36" height="4"/>
+        <rect class="cam-body" x="566" y="82" width="20" height="3"/>
+        <path class="cam-body" d="M567 85 A9 9 0 0 0 585 85 Z"/>
+      </g>
+      <text x="592" y="89" font-size="10">외부 카메라</text>
+      <g id="cam2d_in" class="cam2d">
+        <title>내부 카메라 — 레일 방향으로 봄 (클릭: 카메라 화면)</title>
+        <rect class="cam-body" x="220" y="110" width="20" height="3"/>
+        <path class="cam-body" d="M221 113 A9 9 0 0 0 239 113 Z"/>
+      </g>
+      <text x="244" y="124" font-size="10">내부 카메라</text>
     </svg>
     <div id="station3d" class="hide"><div id="s3d_banner"></div><div id="s3d_interlock"></div><div id="s3d_hint">3D 불러오는 중…</div></div>
+    </div>
+    <div id="cam_panes" class="hide">
+      <div id="pane_ext" class="cam-pane hide">
+        <div class="cam-head"><span>외부 카메라</span><button data-cam-close="ext">✕</button></div>
+        <div class="cam-src"><select data-cam-preset="ext"></select><input data-cam-url="ext" placeholder="rtsp:// 주소 (비우면 시뮬레이션 3D)"><button data-cam-apply="ext">적용</button></div>
+        <div id="camview_ext" class="cam-view">3D 불러오는 중…</div>
+        <img id="camimg_ext" class="cam-live hide" alt="">
+      </div>
+      <div id="pane_in" class="cam-pane hide">
+        <div class="cam-head"><span>내부 카메라</span><button data-cam-close="in">✕</button></div>
+        <div class="cam-src"><select data-cam-preset="in"></select><input data-cam-url="in" placeholder="rtsp:// 주소 (비우면 시뮬레이션 3D)"><button data-cam-apply="in">적용</button></div>
+        <div id="camview_in" class="cam-view">3D 불러오는 중…</div>
+        <img id="camimg_in" class="cam-live hide" alt="">
+      </div>
+    </div>
+    </div>
   </section>
   <section>
     <h2>주입</h2>
@@ -680,6 +730,96 @@ byId("rc_delay_go").addEventListener("click", () => {
   setText("rc_msg", msg);
 });
 
+// 카메라 (외부·내부): 누르면 옆에 카메라 화면. 주소가 비면 시뮬 3D 시점, rtsp 주소면 실제 카메라 (서버가 MJPEG 로 바꿔 보냄)
+const CAM_PRESETS = [["시뮬레이션 (3D)", ""], ["IP 카메라 .248", "rtsp://admin:Alux2026!%40@100.88.48.248:554/stream1"]];
+const CAM_DEFAULT_URL = CAM_PRESETS[1][1];
+window.camState = { ext: { is_open: false, url: CAM_DEFAULT_URL }, in: { is_open: false, url: CAM_DEFAULT_URL } };
+
+document.querySelectorAll("[data-cam-preset]").forEach(sel => {
+  sel.innerHTML = CAM_PRESETS.map(p => `<option value="${escapeAttr(p[1])}">${p[0]}</option>`).join("");
+  sel.value = CAM_DEFAULT_URL;
+});
+document.querySelectorAll("[data-cam-url]").forEach(input => { input.value = CAM_DEFAULT_URL; });
+
+// 입력칸의 주소를 그 카메라 창에 적용 (프리셋 목록에 있으면 목록도 맞춤)
+function applyCamUrl(key) {
+  const url = document.querySelector(`[data-cam-url="${key}"]`).value.trim();
+  window.camState[key].url = url;
+  const sel = document.querySelector(`[data-cam-preset="${key}"]`);
+  const is_preset = CAM_PRESETS.some(p => p[1] === url);
+  if (is_preset) {
+    sel.value = url;
+  }
+  renderCams();
+}
+
+// 실제 카메라 영상: 창이 열려 있고 주소가 있을 때만 받는다 (src 를 지우면 서버 쪽 변환도 끝남)
+function renderLive(key) {
+  const c = window.camState[key];
+  const is_live = c.is_open && c.url !== "";
+  setClass("camview_" + key, "hide", is_live);
+  setClass("camimg_" + key, "hide", !is_live);
+  let src = "";
+  if (is_live) {
+    src = "/api/cam.mjpg?url=" + encodeURIComponent(c.url);
+  }
+  const img = byId("camimg_" + key);
+  if (img.dataset.src === src) {
+    return;
+  }
+  img.dataset.src = src;
+  if (src === "") {
+    img.removeAttribute("src");
+  } else {
+    img.src = src;
+  }
+}
+
+function renderCams() {
+  let is_any = false;
+  Object.keys(window.camState).forEach(k => {
+    const c = window.camState[k];
+    setClass("pane_" + k, "hide", !c.is_open);
+    renderLive(k);
+    if (c.is_open) {
+      is_any = true;
+    }
+  });
+  setClass("cam_panes", "hide", !is_any);
+}
+
+window.openCam = key => {
+  window.camState[key].is_open = true;
+  renderCams();
+  window.station3dShow();
+};
+
+Object.keys(window.camState).forEach(k => byId("cam2d_" + k).addEventListener("click", () => window.openCam(k)));
+byId("cam_panes").addEventListener("click", e => {
+  const close = e.target.dataset.camClose;
+  if (close) {
+    window.camState[close].is_open = false;
+    renderCams();
+  }
+  const apply = e.target.dataset.camApply;
+  if (apply) {
+    applyCamUrl(apply);
+  }
+});
+byId("cam_panes").addEventListener("change", e => {
+  const key = e.target.dataset.camPreset;
+  if (key) {
+    document.querySelector(`[data-cam-url="${key}"]`).value = e.target.value;
+    applyCamUrl(key);
+  }
+});
+byId("cam_panes").addEventListener("keydown", e => {
+  const key = e.target.dataset.camUrl;
+  if (key && e.key === "Enter") {
+    applyCamUrl(key);
+  }
+});
+
 bindInject(document.querySelector(".station-bar"));
 byId("estop_btn").addEventListener("click", () => {
   if (simState === null) {
@@ -743,7 +883,17 @@ const kHdri = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/empty_wareho
 const kSkyHeight = 2.4;
 const kSkyRadius = 40;
 const kTex = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/";
-const kHint = "드래그: 회전 · 휠: 확대 · 우클릭 드래그: 이동 · 패널 버튼 클릭 가능 · 창고 배경·바닥: Poly Haven (CC0)";
+const kRackSize = 1.8;
+const kRackHeight = 5.4;
+const kRackRowX = [-11.2, -9.4, -4.4, -2.6, 2.6, 4.4, 9.4, 11.2];   // 등 맞댄 두 줄씩, 스테이션은 x=0 통로
+const kRackBays = 13;
+const kRackZ0 = 7.7;   // 첫 칸 중심. 스테이션 정면(z 0.6)에서 6 m 남짓 떨어져 줄이 시작 (스테이션은 랙 밖, 슬라이드는 통로 쪽)
+const kRackLevels = [0.15, 1.45, 2.75, 4.05];
+const kBoxGrid = 3;
+const kBarcodeW = 0.12;   // 상자 바코드 라벨 크기 (m)
+const kBarcodeH = 0.07;
+const kBarcodeBars = "211312311421321131124213112131231141221312";   // 막대·빈칸 폭 번갈아
+const kHint = "드래그: 회전 · 휠: 확대 · 우클릭 드래그: 이동 · 패널 버튼·카메라 클릭 가능 · 창고 배경·바닥: Poly Haven (CC0)";
 
 const box = document.getElementById("station3d");
 let THREE = null;
@@ -774,12 +924,14 @@ async function init() {
       import("three/addons/postprocessing/RenderPass.js"),
       import("three/addons/postprocessing/UnrealBloomPass.js"),
       import("three/addons/postprocessing/OutputPass.js"),
+      import("three/addons/postprocessing/OutlinePass.js"),
       import("three/addons/objects/GroundedSkybox.js"),
     ]);
     build(Object.assign({}, ...mods));
     document.getElementById("s3d_hint").textContent = kHint;
   } catch (e) {
     document.getElementById("s3d_hint").textContent = "3D 를 불러오지 못했습니다 (three.js 는 인터넷에서 받습니다): " + e.message;
+    document.querySelectorAll(".cam-view").forEach(el => { el.textContent = "3D 를 불러오지 못했습니다: " + e.message; });
   }
 }
 
@@ -877,38 +1029,105 @@ function hazardTexture() {
   });
 }
 
-// 팔레트 랙 한 칸 (파란 기둥·주황 빔·상자). 상자 크기는 고정 시드로 매번 같게
-function rack(x, z, parent) {
-  const kLen = 2.6;
-  const kDepth = 1.0;
-  const upright = mat(0x1f4e9c, 0.5, 0.45);
-  const beam = mat(0xf57c00, 0.4, 0.45);
-  const deck = mat(0x6b7078, 0.6, 0.5);
-  const card = mat(0xb98a5a, 0, 0.85);
-  const g = new THREE.Group();
-  g.position.set(x, 0, z);
-  parent.add(g);
-  for (const px of [-kLen / 2, kLen / 2]) {
-    for (const pz of [-kDepth / 2, kDepth / 2]) {
-      cube(0.08, 3.0, 0.08, upright, px, 1.5, pz, g);
-    }
-  }
-  let seed = Math.abs(Math.round(x * 97 + z * 31)) + 7;
+// 크기가 다른 상자 여러 개를 InstancedMesh 하나로 (list 원소 = [x, y, z, 가로, 높이, 세로])
+function instanced(list, material, parent) {
+  const mesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), material, list.length);
+  const m = new THREE.Matrix4();
+  list.forEach((p, i) => {
+    m.makeScale(p[3], p[4], p[5]).setPosition(p[0], p[1], p[2]);
+    mesh.setMatrixAt(i, m);
+  });
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  parent.add(mesh);
+  return mesh;
+}
+
+// 물류창고 랙 (1.8 × 1.8 × 5.4 m) 여러 줄: 줄은 슬라이드 방향(z)으로 늘어서고 칸마다 상자가 찬다. 상자는 고정 시드로 매번 같게
+function racks(parent) {
+  const half = kRackSize / 2;
+  const cell = (kRackSize - 0.1) / kBoxGrid;
+  const uprights = [];
+  const beams = [];
+  const decks = [];
+  const boxes = [];
+  let seed = 7;
   const rand = () => {
     seed = (seed * 16807) % 2147483647;
     return seed / 2147483647;
   };
-  for (const y of [0.15, 1.15, 2.15]) {
-    for (const pz of [-kDepth / 2, kDepth / 2]) {
-      cube(kLen, 0.1, 0.05, beam, 0, y, pz, g);
-    }
-    cube(kLen - 0.06, 0.02, kDepth, deck, 0, y + 0.06, 0, g);
-    for (let bx = -kLen / 2 + 0.35; bx < kLen / 2 - 0.2; bx += 0.62) {
-      const bw = 0.42 + rand() * 0.15;
-      const bh = 0.3 + rand() * 0.45;
-      cube(bw, bh, 0.6 + rand() * 0.25, card, bx, y + 0.07 + bh / 2, 0, g);
+  for (const x of kRackRowX) {
+    for (let i = 0; i < kRackBays; i++) {
+      const z = kRackZ0 + i * kRackSize;
+      for (const px of [-half, half]) {
+        for (const pz of [-half, half]) {
+          uprights.push([x + px, kRackHeight / 2, z + pz, 0.08, kRackHeight, 0.08]);
+        }
+      }
+      for (const y of [...kRackLevels, kRackHeight - 0.1]) {
+        for (const px of [-half, half]) {
+          beams.push([x + px, y, z, 0.05, 0.1, kRackSize]);
+        }
+      }
+      for (const y of kRackLevels) {
+        decks.push([x, y + 0.06, z, kRackSize - 0.06, 0.02, kRackSize - 0.06]);
+        for (let a = 0; a < kBoxGrid; a++) {
+          for (let b = 0; b < kBoxGrid; b++) {
+            const is_empty = rand() < 0.1;
+            if (is_empty) {
+              continue;
+            }
+            const bh = 0.35 + rand() * 0.75;
+            boxes.push([x - half + 0.05 + cell * (a + 0.5), y + 0.07 + bh / 2, z - half + 0.05 + cell * (b + 0.5), cell * (0.75 + rand() * 0.2), bh, cell * (0.75 + rand() * 0.2)]);
+          }
+        }
+      }
     }
   }
+  instanced(uprights, mat(0x1f4e9c, 0.5, 0.45), parent);
+  instanced(beams, mat(0xf57c00, 0.4, 0.45), parent);
+  instanced(decks, mat(0x6b7078, 0.6, 0.5), parent);
+  const boxMesh = instanced(boxes, mat(0xffffff, 0, 0.85), parent);
+  const color = new THREE.Color();
+  boxes.forEach((p, i) => {
+    color.setHSL(0.07 + rand() * 0.03, 0.35 + rand() * 0.2, 0.38 + rand() * 0.15);
+    boxMesh.setColorAt(i, color);
+  });
+  // 바코드 라벨: 상자마다 통로 쪽 양 옆면(±x)에 작게 하나씩
+  const labels = new THREE.InstancedMesh(new THREE.PlaneGeometry(kBarcodeW, kBarcodeH), new THREE.MeshStandardMaterial({ map: barcodeTexture(), roughness: 0.6 }), boxes.length * 2);
+  labels.receiveShadow = true;
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const one = new THREE.Vector3(1, 1, 1);
+  const up = new THREE.Vector3(0, 1, 0);
+  boxes.forEach((p, i) => {
+    [-1, 1].forEach((side, j) => {
+      q.setFromAxisAngle(up, side * Math.PI / 2);
+      m.compose(new THREE.Vector3(p[0] + side * (p[3] / 2 + 0.002), p[1] + p[4] * 0.15, p[2]), q, one);
+      labels.setMatrixAt(i * 2 + j, m);
+    });
+  });
+  parent.add(labels);
+}
+
+function barcodeTexture() {
+  return canvasTexture(256, 150, (g, w, h) => {
+    g.fillStyle = "#f4f4ef";
+    g.fillRect(0, 0, w, h);
+    g.fillStyle = "#111111";
+    let x = 18;
+    for (let i = 0; i < kBarcodeBars.length; i++) {
+      const bw = Number(kBarcodeBars[i]) * 1.8;
+      const is_bar = i % 2 === 0;
+      if (is_bar) {
+        g.fillRect(x, 14, bw, 96);
+      }
+      x += bw;
+    }
+    g.font = "bold 24px monospace";
+    g.textAlign = "center";
+    g.fillText("8801234567890", w / 2, 138);
+  });
 }
 
 function logoTexture() {
@@ -945,6 +1164,30 @@ function padTexture() {
   });
 }
 
+// IP 돔 카메라 한 대: pos 에 받침판을 붙이고 아래로 반구가 매달림. 안쪽 렌즈와 시점이 target 을 봄
+function camRig(key, pos, target, fov, parent) {
+  const g = new THREE.Group();
+  g.position.copy(pos);
+  parent.add(g);
+  cyl(0.068, 0.068, 0.022, mat(0xe6eaef, 0.2, 0.42), 0, -0.011, 0, g);
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(0.055, 32, 16, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x0d0f12, 0.6, 0.08, { transparent: true, opacity: 0.7 }));
+  place(shell, 0, -0.022, 0, g);
+  const aim = new THREE.Group();
+  aim.position.set(0, -0.04, 0);
+  g.add(aim);
+  parent.updateMatrixWorld();
+  aim.lookAt(parent.localToWorld(target.clone()));
+  place(new THREE.Mesh(new THREE.SphereGeometry(0.026, 20, 12), mat(0x1d1f23, 0.4, 0.5)), 0, 0, 0, aim);
+  cyl(0.013, 0.013, 0.01, mat(0x0a2a4a, 0.9, 0.05), 0, 0, 0.024, aim).rotation.x = Math.PI / 2;
+  const view = new THREE.PerspectiveCamera(fov, 1.6, 0.03, 80);
+  view.position.set(0, 0, 0.03);
+  view.rotation.y = Math.PI;
+  aim.add(view);
+  const rig = { key, group: g, view, renderer: null, w: 0, h: 0 };
+  g.traverse(o => { o.userData.cam = rig; });
+  return rig;
+}
+
 // ---- 장면 ----
 
 function build(m) {
@@ -970,7 +1213,7 @@ function build(m) {
   });
 
   const camera = new THREE.PerspectiveCamera(36, 2, 0.05, 200);
-  camera.position.set(2.7, 1.45, 3.1);
+  camera.position.set(3.0, 1.8, -1.6);
   const controls = new m.OrbitControls(camera, renderer.domElement);
   controls.target.set(0, 0.5, 0.65);
   controls.enableDamping = true;
@@ -980,6 +1223,11 @@ function build(m) {
 
   const composer = new m.EffectComposer(renderer);
   composer.addPass(new m.RenderPass(scene, camera));
+  const outline = new m.OutlinePass(new THREE.Vector2(512, 512), scene, camera);
+  outline.visibleEdgeColor.set(0x4fc3f7);
+  outline.hiddenEdgeColor.set(0x4fc3f7);
+  outline.edgeStrength = 5;
+  composer.addPass(outline);
   const bloom = new m.UnrealBloomPass(new THREE.Vector2(512, 512), 0.4, 0.3, 1.1);
   composer.addPass(bloom);
   composer.addPass(new m.OutputPass());
@@ -1011,8 +1259,7 @@ function build(m) {
   hazard.position.set(0, 0.062, 0.7);
   hazard.receiveShadow = true;
   scene.add(hazard);
-  rack(-2.4, -3.3, scene);
-  rack(0.6, -3.3, scene);
+  racks(scene);
 
   const white = mat(0xe6eaef, 0.2, 0.42, { envMapIntensity: 0.8 });
   const dark = mat(0x262b33, 0.55, 0.45);
@@ -1181,6 +1428,12 @@ function build(m) {
   const dome = new THREE.Mesh(new THREE.SphereGeometry(0.045, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x0d0f12, 0.6, 0.08, { transparent: true, opacity: 0.92 }));
   place(dome, -kW / 2 + 0.08, kH - 0.005, kD / 2 - 0.08, root);
 
+  // 돔 카메라: 외부 = 지붕 기둥에서 앞으로 뻗은 팔 끝에 매달려 전개된 착륙판을 내려다봄, 내부 = 천장 뒤쪽에 매달려 레일 방향으로 정면을 봄
+  cyl(0.012, 0.012, 0.2, dark, -0.35, roofY + 0.1, kD / 2 - 0.05, root);
+  cube(0.024, 0.024, 0.2, dark, -0.35, roofY + 0.2, kD / 2 + 0.04, root);
+  const camExt = camRig("ext", new THREE.Vector3(-0.35, roofY + 0.188, kD / 2 + 0.1), new THREE.Vector3(0, 0.3, kSlideTravel + 1.0), 60, root);
+  const camIn = camRig("in", new THREE.Vector3(0, kH - 0.017, -kD / 2 + 0.12), new THREE.Vector3(0, 0.35, kD / 2), 75, root);
+
   // 공조: 왼쪽 벽 환풍기 + 히터·쿨러 표시등
   const fan = new THREE.Group();
   fan.position.set(-kW / 2 - 0.014, 0.62, -0.2);
@@ -1225,7 +1478,7 @@ function build(m) {
   const water = cube(kW - 0.1, 0.06, kD - 0.1, mat(0x1e88e5, 0.1, 0.05, { transparent: true, opacity: 0.5 }), 0, kWall + 0.03, 0, root);
   water.castShadow = false;
 
-  Object.assign(v, { renderer, scene, camera, controls, composer, bloom, frontPivot, sideDoor, platform, drone, props, navMats, padMat, ledMat,
+  Object.assign(v, { renderer, scene, camera, controls, composer, bloom, outline, cams: [camExt, camIn], frontPivot, sideDoor, platform, drone, props, navMats, padMat, ledMat,
     beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons, water,
     cover: 0, slide: 0, clock: new THREE.Clock() });
 
@@ -1247,17 +1500,31 @@ function resize() {
   v.camera.updateProjectionMatrix();
 }
 
-// 마우스 아래의 패널 버튼 (없으면 null)
-function buttonAt(e) {
+// 마우스 아래 objects 중 가장 가까운 것에 맞은 결과 (없으면 undefined)
+function hitAt(e, objects) {
   const r = v.renderer.domElement.getBoundingClientRect();
   const p = new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1);
   const ray = new THREE.Raycaster();
   ray.setFromCamera(p, v.camera);
-  const hit = ray.intersectObjects(v.buttons.map(b => b.mesh))[0];
+  return ray.intersectObjects(objects)[0];
+}
+
+// 마우스 아래의 패널 버튼 (없으면 null)
+function buttonAt(e) {
+  const hit = hitAt(e, v.buttons.map(b => b.mesh));
   if (hit === undefined) {
     return null;
   }
   return v.buttons.find(b => b.mesh === hit.object);
+}
+
+// 마우스 아래의 카메라 (벽 너머 내부 카메라도 잡힘, 없으면 null)
+function camAt(e) {
+  const hit = hitAt(e, v.cams.map(c => c.group));
+  if (hit === undefined) {
+    return null;
+  }
+  return hit.object.userData.cam;
 }
 
 // 버튼 클릭 → 주입. E-STOP 은 눌림/해제 전환, 현장 버튼은 한 번 누름 (드래그로 돌린 건 클릭으로 치지 않음)
@@ -1268,6 +1535,11 @@ function bindClick() {
   el.addEventListener("pointerup", e => {
     const is_click = downAt !== null && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) < 4;
     downAt = null;
+    const cam = camAt(e);
+    if (is_click && cam !== null) {
+      window.openCam(cam.key);
+      return;
+    }
     const b = buttonAt(e);
     if (!is_click || last === null || b === null) {
       return;
@@ -1280,7 +1552,12 @@ function bindClick() {
   });
   el.addEventListener("pointermove", e => {
     let cursor = "grab";
-    if (buttonAt(e) !== null) {
+    const cam = camAt(e);
+    v.outline.selectedObjects = [];
+    if (cam !== null) {
+      v.outline.selectedObjects = [cam.group];
+    }
+    if (buttonAt(e) !== null || cam !== null) {
       cursor = "pointer";
     }
     el.style.cursor = cursor;
@@ -1309,7 +1586,40 @@ function frame() {
   if (last !== null) {
     apply(last, dt, t);
   }
-  v.composer.render();
+  if (!box.classList.contains("hide")) {
+    v.composer.render();
+  }
+  for (const c of v.cams) {
+    renderCam(c);
+  }
+}
+
+// 열린 카메라 창에 그 카메라 시점을 그린다 (창마다 렌더러 하나, 처음 열 때 만듦)
+function renderCam(c) {
+  const st = window.camState[c.key];
+  if (!st.is_open || st.url !== "") {
+    return;
+  }
+  const el = document.getElementById("camview_" + c.key);
+  if (c.renderer === null) {
+    c.renderer = new THREE.WebGLRenderer({ antialias: true });
+    c.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    c.renderer.shadowMap.enabled = true;
+    c.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    c.renderer.toneMappingExposure = v.renderer.toneMappingExposure;
+    el.textContent = "";
+    el.append(c.renderer.domElement);
+  }
+  const w = el.clientWidth;
+  const h = el.clientHeight;
+  if (w !== c.w || h !== c.h) {
+    c.w = w;
+    c.h = h;
+    c.renderer.setSize(w, h);
+    c.view.aspect = w / h;
+    c.view.updateProjectionMatrix();
+  }
+  c.renderer.render(v.scene, c.view);
 }
 
 // 스냅샷 → 장면. 위치는 부드럽게 따라가고 빛은 패턴대로 깜빡인다
