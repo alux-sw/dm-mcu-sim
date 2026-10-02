@@ -637,10 +637,20 @@ function renderSim(s) {
     const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
     const pulseHtml = INJECT_PULSES.map(k => `<button data-key="${k}">${k} 누름</button>`).join("");
     const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
-    box.innerHTML = boolHtml + "<br>" + pulseHtml + "<br>" + numHtml;
+    const droneHtml = `드론 mock: <label><input type="checkbox" id="drone_link"> 링크</label>`
+      + ` <button id="drone_takeoff">이륙</button> <button id="drone_land">착륙</button>`
+      + ` <label><input type="checkbox" id="drone_stowed"> 수납 보고</label> <span id="drone_text" class="rx-head"></span>`;
+    box.innerHTML = boolHtml + "<br>" + pulseHtml + "<br>" + numHtml + "<br>" + droneHtml;
     bindInject(box);
+    byId("drone_link").addEventListener("change", e => postJson("/api/drone", { link: e.target.checked }));
+    byId("drone_stowed").addEventListener("change", e => postJson("/api/drone", { stowed_report: e.target.checked }));
+    byId("drone_takeoff").addEventListener("click", () => postJson("/api/drone", { location: "airborne" }));
+    byId("drone_land").addEventListener("click", () => postJson("/api/drone", { location: "docked" }));
   }
   refreshInject(document, inj);
+  byId("drone_link").checked = s.drone.link;
+  byId("drone_stowed").checked = s.drone.stowed_report;
+  setText("drone_text", `위치 ${s.drone.location}`);
   let active = "-";
   if (n.active) {
     active = `#${n.active.seq} ${n.active.name}`;

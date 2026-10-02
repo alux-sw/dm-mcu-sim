@@ -85,6 +85,7 @@ assert ack(mcu) == (4, 1, icd.HI5)
 cmd(mcu, 5, icd.SLIDE_RETRACT)
 ticks(mcu, kTicksSlide)
 assert done(mcu) == (5, 0)
+mcu.inject["drone_detected"] = False
 cmd(mcu, 6, icd.CHARGE_ON)
 assert ack(mcu) == (6, 0, icd.OK) and done(mcu) == (6, 3) and mcu.inputs[icd.CHG_STATE] == 2
 
@@ -196,5 +197,50 @@ assert mcu.fault_code == 0 and not mcu.safe_hold and mcu.inputs[icd.FAULT_CODE] 
 assert mcu.inputs[icd.LIGHT_STATE] == 3
 mcu.set_state({"SET_LED_PATTERN": 2})
 assert mcu.inputs[icd.LED_PATTERN] == 2
+
+# DONE 을 받자마자 다음 명령: 커버 열림 DONE 틱의 HARD_BLOCK 은 이미 열림 기준 (HI-2 없음)
+cmd(mcu, 30, icd.COVER_CLOSE)
+ticks(mcu, kTicksCover)
+cmd(mcu, 31, icd.COVER_OPEN)
+for _ in range(kTicksCover):
+    ticks(mcu, 1)
+    if done(mcu) == (31, 0):
+        break
+assert done(mcu) == (31, 0)
+mcu.handle(mb.req_write_multi(icd.CMD_SEQ, [32, icd.SLIDE_EXTEND, 0, 0]))
+assert ack(mcu) == (32, 0, icd.OK)
+ticks(mcu, kTicksSlide)
+assert done(mcu) == (32, 0)
+
+# 할 수 없는 현장 버튼(슬라이드 나와 있어 커버 닫기 HI-1)은 SM 명령을 끊지 않음
+cmd(mcu, 33, icd.SLIDE_RETRACT)
+ticks(mcu, 3)
+mcu.inject["btn_door"] = True
+ticks(mcu, 1)
+assert mcu.active is not None and mcu.active["seq"] == 33
+ticks(mcu, kTicksSlide)
+assert done(mcu) == (33, 0)
+
+# SM 명령과 같은 동작의 현장 버튼(커버 여는 중 문 버튼)은 무시, SM 명령은 OK
+cmd(mcu, 34, icd.COVER_CLOSE)
+ticks(mcu, kTicksCover)
+cmd(mcu, 35, icd.COVER_OPEN)
+ticks(mcu, 3)
+mcu.inject["btn_door"] = True
+ticks(mcu, 1)
+assert mcu.active is not None and mcu.active["seq"] == 35
+ticks(mcu, kTicksCover)
+assert done(mcu) == (35, 0) and mcu.inputs[icd.COVER_STATE] == 2
+
+# 드론 mock: 이륙하면 착륙판 하중·수납 보고가 꺼지고, 착륙하면 켜짐
+mcu.set_drone({"location": "airborne"})
+ticks(mcu, 1)
+assert mcu.drone == {"link": True, "location": "airborne", "stowed_report": False}
+assert not mcu.inputs[icd.SLIDE_LIMITS] & 0b100 and not mcu.inputs[icd.MCU_STATUS] & (1 << 6)
+mcu.set_drone({"location": "docked"})
+ticks(mcu, 1)
+assert mcu.drone["stowed_report"] and mcu.inputs[icd.SLIDE_LIMITS] & 0b100
+mcu.set_drone({"link": False, "stowed_report": False})
+assert mcu.drone == {"link": False, "location": "docked", "stowed_report": False}
 
 print("test_sim: OK")
