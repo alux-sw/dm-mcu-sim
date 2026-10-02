@@ -129,7 +129,6 @@
       <text id="hb_text" x="15" y="24"></text>
       <line x1="0" y1="300" x2="900" y2="300" stroke="#555"/>
       <rect id="interior" class="interior" x="158" y="110" width="404" height="180"/>
-      <rect id="flood" class="hide" x="158" y="274" width="404" height="16" fill="#1e88e5" opacity=".6"/>
       <rect x="150" y="290" width="420" height="10" fill="#555"/>
       <rect x="150" y="110" width="8" height="180" fill="#666"/>
       <rect x="150" y="102" width="420" height="8" fill="#666"/>
@@ -279,7 +278,7 @@ function renderLocks(s) {
 }
 
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
-const INJECT_BOOLS = ["estop", "ac_ok", "flood", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
+const INJECT_BOOLS = ["estop", "ac_ok", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
 const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
 const INJECT_NUMS = ["contact_temp", "temp_in", "hum_in", "motion_timeout_sec"];
 const SLIDE_TRAVEL = 330;
@@ -528,7 +527,6 @@ function renderStation(s) {
   setClass("estop_btn", "on", inj.estop);
   INJECT_PULSES.forEach(k => setClass(k, "on", inj[k]));
   setClass("btn_maint", "maint-on", n.maint_active === 1);
-  setClass("flood", "hide", !inj.flood);
   setText("env_text", `내부 ${inj.temp_in.toFixed(1)} ℃ / ${inj.hum_in.toFixed(0)} %   접점 ${inj.contact_temp.toFixed(1)} ℃`);
   let maintText = "";
   if (n.maint_active === 1) {
@@ -1484,12 +1482,8 @@ function build(m) {
     buttons.push({ mesh: btn, key, mat: btnMat });
   }
 
-  // 침수: 바닥의 물
-  const water = cube(kW - 0.1, 0.06, kD - 0.1, mat(0x1e88e5, 0.1, 0.05, { transparent: true, opacity: 0.5 }), 0, kWall + 0.03, 0, root);
-  water.castShadow = false;
-
   Object.assign(v, { renderer, scene, camera, controls, composer, bloom, outline, cams: [camExt, camIn], frontPivot, sideDoor, platform, drone, props, navMats, padMat, ledMat,
-    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons, water,
+    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons,
     cover: 0, slide: 0, clock: new THREE.Clock() });
 
   new ResizeObserver(resize).observe(box);
@@ -1709,7 +1703,6 @@ function apply(s, dt, t) {
       b.mat.emissiveIntensity = 3;
     }
   }
-  v.water.visible = inj.flood;
 
   let banner = "";
   let color = "#ef6c00";

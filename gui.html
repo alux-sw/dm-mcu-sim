@@ -517,8 +517,7 @@ function renderMaster(s) {
   ]);
   rows("env_tbl", [
     ["내부 온습도", `${(r.TEMP_IN_x10 / 10).toFixed(1)} ℃ / ${(r.HUM_IN_x10 / 10).toFixed(1)} %`, ["TEMP_IN_x10", "HUM_IN_x10"]],
-    ["FLOOD", r.FLOOD, "FLOOD"],
-    ["ENV_STALE", chips(d.env_stale, ["temp_hum", "flood"]), "ENV_STALE"],
+    ["ENV_STALE", chips(d.env_stale, ["temp_hum"]), "ENV_STALE"],
     ["PWR_FLAGS", chips(d.pwr_flags, ["ac_ok", "ups_on_battery", "ups_charging"]), "PWR_FLAGS"],
     ["UPS", `${(r.UPS_VOLTAGE_10mV / 100).toFixed(2)} V / ${r.UPS_SOC_PCT} %`, ["UPS_VOLTAGE_10mV", "UPS_SOC_PCT"]],
     ["24V 버스", `${(r.BUS24_10mV / 100).toFixed(2)} V / ${(r.BUS24_10mA / 100).toFixed(2)} A`, ["BUS24_10mV", "BUS24_10mA"]],
