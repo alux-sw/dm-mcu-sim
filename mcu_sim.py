@@ -39,13 +39,14 @@ kReadback = {
     icd.SET_LED_PATTERN: icd.LED_PATTERN,
 }
 kButtons = ("btn_door", "btn_slide", "btn_maint")
+kDroneLocations = ("docked", "airborne")   # 드론 mock 위치. docked 면 착륙판 하중(drone_detected)도 켜짐
 # 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
 kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
              "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
              "bms_rsoc": float, "bms_voltage_mv": int, "bms_cell_mv": int, "bms_temp_c": float,
              "bms_cycle_count": int, "bms_charging_current_ma": int}
 kInjectDefaults = {
-    "estop": False, "ac_ok": True, "flood": False, "drone_detected": False, "bms_link": True,
+    "estop": False, "ac_ok": True, "flood": False, "drone_detected": True, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
     "btn_door": False, "btn_slide": False, "btn_maint": False,
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
@@ -116,6 +117,7 @@ class Mcu:
         self.maint_active = 0
         self.maint_source = 0
         self.btn_release_at = {}
+        self.drone = {"link": True, "location": "docked", "stowed_report": True}   # 드론 링크 mock (SM 이 /api/drone 으로 읽음)
         self.timers = []
         self.note("MCU boot")
 
@@ -222,10 +224,9 @@ class Mcu:
                 return icd.FAULT_LATCHED
             if is_busy:
                 return icd.BUSY
-        for hi_no in icd.CMD_HI_REJECT.get(code, ()):
-            is_blocked = (self.hard_block & (1 << (hi_no - 1))) != 0
-            if is_blocked:
-                return hi_no
+        hi_no = self.hard_block_reason(code)
+        if hi_no != icd.OK:
+            return hi_no
         if code == icd.CHARGE_ON:
             if self.inject["contact_temp"] > kContactTempMaxC:
                 return icd.CONTACT_OVERTEMP
@@ -245,6 +246,14 @@ class Mcu:
             is_unsafe = is_busy or self.chg_on or self.cover_pos > 0.0
             if is_unsafe:
                 return icd.BUSY
+        return icd.OK
+
+    def hard_block_reason(self, code):
+        """이 명령을 막는 하드 인터락 번호. 없으면 OK"""
+        for hi_no in icd.CMD_HI_REJECT.get(code, ()):
+            is_blocked = (self.hard_block & (1 << (hi_no - 1))) != 0
+            if is_blocked:
+                return hi_no
         return icd.OK
 
     def is_fault_cause_active(self):
@@ -366,6 +375,16 @@ class Mcu:
                 code = icd.SLIDE_RETRACT
         is_remote_motion = self.active is not None and self.active["seq"] != 0
         if is_remote_motion:
+            is_same = self.active["code"] == code
+            if is_same:   # SM 명령과 같은 동작이면 SM 명령을 그대로 둔다
+                self.note("button %s same as seq %d, ignored" % (key, self.active["seq"]))
+                return
+            reason = self.hard_block_reason(code)
+            if self.fault_code != 0:
+                reason = icd.FAULT_LATCHED
+            if reason != icd.OK:   # 할 수 없는 버튼 동작이면 SM 명령을 끊지 않는다
+                self.note("button %s ignored: %s" % (key, icd.REASON_NAMES.get(reason, hex(reason))))
+                return
             # 현장 우선: SM 명령 모션을 ABORTED 로 끝내고 버튼 동작을 받는다
             self.note("button %s preempts seq %d" % (key, self.active["seq"]))
             self.abort_motion(2)
@@ -392,9 +411,9 @@ class Mcu:
         self.now += kTickSec
         self.run_timers()
         self.tick_heartbeat()
-        self.tick_interlocks()
-        self.tick_buttons()
         self.tick_motion()
+        self.tick_interlocks()   # 모션 뒤에 판정해야 DONE 을 낸 틱의 HARD_BLOCK 이 새 위치 기준
+        self.tick_buttons()
         self.tick_charger()
         self.fill_inputs()
         self.apply_force()
@@ -703,6 +722,7 @@ class Mcu:
                     "maint_active": self.maint_active,
                     "maint_source": icd.MAINT_SOURCE_NAMES[self.maint_source],
                 },
+                "drone": dict(self.drone),
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
                 "settable": {k: getattr(self, k) for k in kSettable},
                 "regs": {name: self.signed_input(a) for a, name in icd.INPUT_NAMES.items()},
@@ -755,6 +775,25 @@ class Mcu:
                     self.note("inject %s=%s" % (key, self.inject[key]))
         return self.snapshot()
 
+    def drone_state(self):
+        with self.lock:
+            return dict(self.drone)
+
+    def set_drone(self, body):
+        """본문 예: {"location": "airborne"}, {"link": false}, {"stowed_report": false}. 위치를 바꾸면 착륙판 하중·수납 보고도 따라감"""
+        with self.lock:
+            if "link" in body:
+                self.drone["link"] = bool(body["link"])
+            if body.get("location") in kDroneLocations:
+                is_docked = body["location"] == "docked"
+                self.drone["location"] = body["location"]
+                self.drone["stowed_report"] = is_docked
+                self.inject["drone_detected"] = is_docked
+            if "stowed_report" in body:
+                self.drone["stowed_report"] = bool(body["stowed_report"])
+            self.note("drone %s" % self.drone)
+        return self.snapshot()
+
     def set_state(self, body):
         """본문 예: {"fault_code": 0, "SET_LIGHT": 3}. 내부 상태나 보유 레지스터를 그 값으로 바꿉니다 (force 와 달리 시뮬 동작이 따라감)"""
         holding_addr = {name: a for a, name in icd.HOLDING_NAMES.items()}
@@ -801,6 +840,8 @@ def main():
         ("POST", "/api/inject"): mcu.set_inject,
         ("POST", "/api/force"): mcu.set_force,
         ("POST", "/api/set"): mcu.set_state,
+        ("GET", "/api/drone"): lambda body: mcu.drone_state(),
+        ("POST", "/api/drone"): mcu.set_drone,
         ("GET", "/api/icd"): lambda body: icd.describe(),
     }, html_path=kGuiFile, streams={"/api/cam.mjpg": camstream.mjpeg})
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
