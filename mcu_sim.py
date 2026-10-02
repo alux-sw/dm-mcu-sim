@@ -46,7 +46,7 @@ kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_po
              "bms_rsoc": float, "bms_voltage_mv": int, "bms_cell_mv": int, "bms_temp_c": float,
              "bms_cycle_count": int, "bms_charging_current_ma": int}
 kInjectDefaults = {
-    "estop": False, "ac_ok": True, "flood": False, "drone_detected": True, "bms_link": True,
+    "estop": False, "ac_ok": True, "drone_detected": True, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
     "btn_door": False, "btn_slide": False, "btn_maint": False,
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
@@ -538,7 +538,6 @@ class Mcu:
         self.fill_charger()
         inp[icd.TEMP_IN] = u16(int(inj["temp_in"] * 10))
         inp[icd.HUM_IN] = int(inj["hum_in"] * 10)
-        inp[icd.FLOOD] = int(inj["flood"])
         inp[icd.ENV_STALE] = 0
         pwr = 1 << 1
         if inj["ac_ok"]:

@@ -60,7 +60,6 @@ CONTACT_TEMP = 0x0035
 CHG_FAULT_CODE = 0x0036
 TEMP_IN = 0x0040
 HUM_IN = 0x0041
-FLOOD = 0x0042
 ENV_STALE = 0x0043
 PWR_FLAGS = 0x0050
 UPS_VOLTAGE = 0x0051
@@ -147,7 +146,6 @@ INPUT_NAMES = {
     CHG_FAULT_CODE: "CHG_FAULT_CODE",
     TEMP_IN: "TEMP_IN_x10",
     HUM_IN: "HUM_IN_x10",
-    FLOOD: "FLOOD",
     ENV_STALE: "ENV_STALE",
     PWR_FLAGS: "PWR_FLAGS",
     UPS_VOLTAGE: "UPS_VOLTAGE_10mV",
@@ -313,7 +311,7 @@ CLIMATE_OUT_BITS = ("heater", "cooler", "fan")
 LIGHT_BITS = ("inner", "outer")
 ALARM_BITS = ("buzzer", "indicator")
 PWR_FLAG_BITS = ("ac_ok", "ups_on_battery", "ups_charging")
-ENV_STALE_BITS = ("temp_hum", "flood")
+ENV_STALE_BITS = ("temp_hum",)
 
 # ICD 설명 (툴팁용)
 HOLDING_DESC = {
@@ -361,8 +359,7 @@ INPUT_DESC = {
     CHG_FAULT_CODE: "0 없음, 1 접점 과온, 2 과전류, 3 통전 없음, 4 BMS 거부",
     TEMP_IN: "내부 온도 ℃×10 (I16). 냉난방 온도",
     HUM_IN: "내부 습도 %×10",
-    FLOOD: "침수 감지 0 / 1",
-    ENV_STALE: "센서 갱신 정지 감지. bit0 내부 온습도, bit1 침수",
+    ENV_STALE: "센서 갱신 정지 감지. bit0 내부 온습도",
     PWR_FLAGS: "bit0 ac_ok, bit1 ups_on_battery, bit2 ups_charging. AC 유무·정전/복전",
     UPS_VOLTAGE: "백업 배터리 전압 10 mV",
     UPS_SOC: "백업 배터리 잔량 %",
