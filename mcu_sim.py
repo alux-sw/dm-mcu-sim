@@ -655,7 +655,7 @@ class Mcu:
         inp[icd.BMS_RSOC] = int(self.bms_rsoc)
         inp[icd.BMS_REMAIN] = int(kBmsDesignCapacitymAh * self.bms_rsoc / 100)
         inp[icd.BMS_TEMP] = int(round((self.bms_temp_c + 273.15) * 10))
-        for i in range(6):
+        for i in range(kBmsCells):
             inp[icd.BMS_CELL1 + i] = self.bms_cell_mv
         inp[icd.BMS_CYCLE_COUNT] = self.bms_cycle_count
         inp[icd.BMS_FAULT_FLAGS_HI] = 0
