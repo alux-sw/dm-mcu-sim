@@ -44,7 +44,7 @@ kDroneLocations = ("docked", "airborne")   # 드론 mock 위치. docked 면 착�
 # 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
 kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
              "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
-             "bms_rsoc": float, "bms_voltage_mv": int, "bms_cell_mv": int, "bms_temp_c": float,
+             "bms_rsoc": float, "bms_cell_mv": int, "bms_temp_c": float,
              "bms_cycle_count": int, "bms_charging_current_ma": int}
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "drone_detected": True, "bms_link": True,
@@ -110,7 +110,6 @@ class Mcu:
         self.bms_pwr = 1
         self.bms_lost_at = None
         self.bms_rsoc = 80.0
-        self.bms_voltage_mv = 4100 * kBmsCells
         self.bms_cell_mv = 4100
         self.bms_temp_c = 25.0
         self.bms_cycle_count = 12
@@ -650,7 +649,7 @@ class Mcu:
         inp[icd.BMS_LINK] = 1
         inp[icd.BMS_AGE] = 0
         inp[icd.BMS_BATTERY_STATUS] = 0x00C0
-        inp[icd.BMS_VOLTAGE] = self.bms_voltage_mv
+        inp[icd.BMS_VOLTAGE] = self.bms_cell_mv * kBmsCells
         inp[icd.BMS_CURRENT_HI] = u16(current_ma >> 16)
         inp[icd.BMS_CURRENT_LO] = u16(current_ma)
         inp[icd.BMS_RSOC] = int(self.bms_rsoc)
