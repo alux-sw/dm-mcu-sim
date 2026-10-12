@@ -22,6 +22,21 @@
   label { white-space: nowrap; }
   pre { margin: 0; font-size: 11px; max-height: 220px; overflow: auto; background: #1a1b1e; padding: 4px; }
   .err { color: #f66; }
+  .inject-grid { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 3px 10px; margin-bottom: 10px; }
+  .inject-grid > input, .ig-ctl { justify-self: end; }
+  .inject-grid > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ig-title { grid-column: 1 / -1; margin-top: 6px; padding-top: 5px; border-top: 1px solid #3a3c42; color: #9cf; font-size: 12px; }
+  .ig-title:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  .ig-wide { grid-column: 1 / -1; display: flex; gap: 4px; }
+  .ig-row { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; }
+  .ig-wide button { flex: 1; margin: 0; }
+  .ig-ctl { display: flex; align-items: center; gap: 4px; }
+  .ig-ctl button { margin: 0; }
+  .inject-grid input[type=number] { width: 64px; }
+  .inject-grid input.num-s { width: 44px; }
+  .inject-grid select { width: auto; }
+  .key { color: #6f747c; font-size: 10px; font-style: normal; margin-left: 2px; }
+  .muted { color: #aaa; font-size: 11px; }
   #force_box { margin: 4px 0 6px; }
   #force_list { margin-top: 4px; }
   .force-chip { display: inline-block; padding: 1px 6px; margin: 1px; border-radius: 3px; background: #7a5d00; color: #ffe08a; cursor: pointer; }
@@ -211,14 +226,45 @@
   </section>
   <section>
     <h2>주입</h2>
-    <div id="inject"></div>
-    <div id="resp_box">
-      응답 조작 —
-      예외 <select id="rc_exc"><option value="2">0x02 주소</option><option value="3">0x03 값</option><option value="4">0x04 장치오류</option></select>
-      <input id="rc_exc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_exc_go">보냄</button>
-      · CRC 깨기 <input id="rc_crc_n" type="number" value="1" min="1" size="3"> 회 <button id="rc_crc_go">보냄</button>
-      · 지연 <input id="rc_delay" type="number" value="0" min="0" step="10" size="4"> ms <button id="rc_delay_go">적용</button>
-      <span id="rc_msg" class="rx-head"></span>
+    <!-- 왼쪽 이름 · 오른쪽 조작. 회색 작은 글씨는 /api/inject 키 -->
+    <div id="inject" class="inject-grid">
+      <div class="ig-title">비상·전원</div>
+      <span>E-STOP <i class="key">estop</i></span><input type="checkbox" data-key="estop">
+      <span>AC 전원 <i class="key">ac_ok</i></span><input type="checkbox" data-key="ac_ok">
+
+      <div class="ig-title">환경</div>
+      <span>내부 온도 ℃ <i class="key">temp_in</i></span><input type="number" step="0.5" data-key="temp_in">
+      <span>내부 습도 % <i class="key">hum_in</i></span><input type="number" step="0.5" data-key="hum_in">
+
+      <div class="ig-title">구동부</div>
+      <span>과전류 <i class="key">overcurrent</i></span><input type="checkbox" data-key="overcurrent">
+      <span>리미트 모순 <i class="key">limit_conflict</i></span><input type="checkbox" data-key="limit_conflict">
+      <span>모션 타임아웃 초 <i class="key">motion_timeout_sec</i></span><input type="number" step="0.5" data-key="motion_timeout_sec">
+
+      <div class="ig-title">충전·배터리</div>
+      <span>착륙판 드론 감지 <i class="key">drone_detected</i></span><input type="checkbox" data-key="drone_detected">
+      <span>BMS 링크 <i class="key">bms_link</i></span><input type="checkbox" data-key="bms_link">
+      <span>접점 온도 ℃ <i class="key">contact_temp</i></span><input type="number" step="0.5" data-key="contact_temp">
+
+      <div class="ig-title">현장 버튼 <span class="muted">(한 번 누름)</span></div>
+      <div class="ig-wide">
+        <button data-key="btn_door">도어</button><button data-key="btn_slide">슬라이드</button><button data-key="btn_maint">정비</button>
+      </div>
+
+      <div class="ig-title">드론 mock <span id="drone_text" class="muted"></span></div>
+      <span>링크</span><input type="checkbox" id="drone_link">
+      <span>수납 보고</span><input type="checkbox" id="drone_stowed">
+      <div class="ig-row"><span>위치</span><span class="ig-ctl"><button id="drone_takeoff">이륙</button><button id="drone_land">착륙</button></span></div>
+
+      <div class="ig-title">MCU 응답 <span id="rc_msg" class="muted"></span></div>
+      <span>무응답 <i class="key">mute</i></span><input type="checkbox" data-key="mute">
+      <div class="ig-row"><span>예외 응답</span>
+      <span class="ig-ctl"><select id="rc_exc"><option value="2">0x02 주소</option><option value="3">0x03 값</option><option value="4">0x04 장치오류</option></select>
+        <input id="rc_exc_n" class="num-s" type="number" value="1" min="1">회<button id="rc_exc_go">보냄</button></span></div>
+      <div class="ig-row"><span>CRC 깨기</span>
+      <span class="ig-ctl"><input id="rc_crc_n" class="num-s" type="number" value="1" min="1">회<button id="rc_crc_go">보냄</button></span></div>
+      <div class="ig-row"><span>응답 지연 ms</span>
+      <span class="ig-ctl"><input id="rc_delay" class="num-s" type="number" value="0" min="0" step="10"><button id="rc_delay_go">적용</button></span></div>
     </div>
     <div id="force_box">
       레지스터 강제 (입력 레지스터 표의 값을 눌러 고친다) <button id="force_clear">전체 해제</button>
@@ -278,9 +324,7 @@ function renderLocks(s) {
 }
 
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
-const INJECT_BOOLS = ["estop", "ac_ok", "drone_detected", "bms_link", "overcurrent", "limit_conflict", "mute"];
 const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
-const INJECT_NUMS = ["contact_temp", "temp_in", "hum_in", "motion_timeout_sec"];
 const SLIDE_TRAVEL = 330;
 const INPUT_SECTIONS = [[0x00, "명령 피드백"], [0x10, "MCU 상태"], [0x20, "커버/슬라이드"], [0x30, "충전기"], [0x40, "환경"], [0x50, "전원"], [0x60, "출력 되읽기"], [0x80, "BMS"], [0xB0, "BMS 식별"]];
 let ICD = null;
@@ -630,21 +674,6 @@ function renderSim(s) {
   simState = s;
   const inj = s.inject;
   const n = s.internal;
-  const box = byId("inject");
-  if (box.children.length === 0) {
-    const boolHtml = INJECT_BOOLS.map(k => `<label><input type="checkbox" data-key="${k}"> ${k}</label> `).join("");
-    const pulseHtml = INJECT_PULSES.map(k => `<button data-key="${k}">${k} 누름</button>`).join("");
-    const numHtml = INJECT_NUMS.map(k => `${k} <input type="number" step="0.5" data-key="${k}"> `).join("");
-    const droneHtml = `드론 mock: <label><input type="checkbox" id="drone_link"> 링크</label>`
-      + ` <button id="drone_takeoff">이륙</button> <button id="drone_land">착륙</button>`
-      + ` <label><input type="checkbox" id="drone_stowed"> 수납 보고</label> <span id="drone_text" class="rx-head"></span>`;
-    box.innerHTML = boolHtml + "<br>" + pulseHtml + "<br>" + numHtml + "<br>" + droneHtml;
-    bindInject(box);
-    byId("drone_link").addEventListener("change", e => postJson("/api/drone", { link: e.target.checked }));
-    byId("drone_stowed").addEventListener("change", e => postJson("/api/drone", { stowed_report: e.target.checked }));
-    byId("drone_takeoff").addEventListener("click", () => postJson("/api/drone", { location: "airborne" }));
-    byId("drone_land").addEventListener("click", () => postJson("/api/drone", { location: "docked" }));
-  }
   refreshInject(document, inj);
   byId("drone_link").checked = s.drone.link;
   byId("drone_stowed").checked = s.drone.stowed_report;
@@ -829,6 +858,11 @@ byId("cam_panes").addEventListener("keydown", e => {
 });
 
 bindInject(document.querySelector(".station-bar"));
+bindInject(byId("inject"));
+byId("drone_link").addEventListener("change", e => postJson("/api/drone", { link: e.target.checked }));
+byId("drone_stowed").addEventListener("change", e => postJson("/api/drone", { stowed_report: e.target.checked }));
+byId("drone_takeoff").addEventListener("click", () => postJson("/api/drone", { location: "airborne" }));
+byId("drone_land").addEventListener("click", () => postJson("/api/drone", { location: "docked" }));
 byId("estop_btn").addEventListener("click", () => {
   if (simState === null) {
     return;
