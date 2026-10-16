@@ -914,6 +914,8 @@ const kWall = 0.04;
 const kPlinth = 0.14;
 const kSlideTravel = 1.25;
 const kSideDoorOpen = Math.PI * 0.56;
+const kDroneModelUrl = "/api/drone.glb";
+const kDroneModelLift = 0.043;   // GLB 바닥(-0.108 m)을 착륙판 위에 올리는 높이
 const kSideZ0 = -0.3;
 const kSideZ1 = 0.16;
 const kSideY0 = 0.18;
@@ -1429,6 +1431,15 @@ function build(m) {
   for (const [x, z] of [[-0.09, -0.08], [0.09, -0.08], [-0.09, 0.08], [0.09, 0.08]]) {
     cyl(0.005, 0.005, 0.06, carbon, x, -0.025, z, drone);
   }
+  // 시뮬 서버에 실제 드론 GLB 가 있으면 기본 모형을 바꿔 끼움 (GLB 는 -X 가 정면 → +Z 로 돌림)
+  import("three/addons/loaders/GLTFLoader.js").then(m => new m.GLTFLoader().loadAsync(kDroneModelUrl)).then(gltf => {
+    const model = gltf.scene;
+    model.rotation.y = Math.PI / 2;
+    model.position.y = kDroneModelLift;
+    model.traverse(o => { o.castShadow = true; });
+    drone.clear();
+    drone.add(model);
+  }).catch(() => {});
 
   // 상태 LED 띠 (정면 위 프레임)
   const ledMat = mat(0x111111, 0, 0.3, { emissive: 0x222222, emissiveIntensity: 1 });
