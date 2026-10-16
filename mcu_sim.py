@@ -13,7 +13,7 @@ import webapi
 kDefaultPort = "/dev/ttyUSB0"
 kHttpPort = int(os.environ.get("MCU_SIM_HTTP_PORT", "8881"))
 kGuiFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim.html")
-kDroneModelFile = os.environ.get("MCU_SIM_DRONE_GLB", os.path.expanduser("~/dm-mcu-sim-assets/drone.glb"))   # 저장소 밖에 두는 실제 드론 형상
+kDroneModelFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drone.glb")
 kTickSec = 0.1
 kCoverMoveSec = 3.0
 kSlideMoveSec = 4.0
@@ -828,11 +828,8 @@ def serve_serial(mcu, fd):
         os.write(fd, resp)
 
 
-# 3D 화면의 드론 형상. 파일이 없으면 404 → 기본 모형 사용
+# 3D 화면의 드론 형상
 def drone_model(handler, query):
-    if not os.path.exists(kDroneModelFile):
-        handler.send(404, b"no drone model", "text/plain")
-        return
     with open(kDroneModelFile, "rb") as f:
         handler.send(200, f.read(), "model/gltf-binary")
 
