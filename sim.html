@@ -61,7 +61,6 @@
   svg text { font-family: system-ui, sans-serif; fill: #ccc; font-size: 12px; }
   .door { fill: #8a8f99; transition: transform .2s linear; }
   #door_front { transform-origin: 566px 290px; }
-  #door_side { transform-origin: 210px 286px; }
   #platform { transition: transform .2s linear; }
   .moving { stroke: #ffb300; stroke-width: 2; }
   .hide { display: none; }
@@ -152,8 +151,6 @@
       <text x="360" y="88" text-anchor="middle" font-size="10">상태 LED</text>
       <line x1="300" y1="240" x2="880" y2="240" stroke="#777" stroke-dasharray="6 4"/>
       <text x="760" y="256" fill="#888">슬라이드 레일 (전개 방향 →)</text>
-      <rect id="door_side" class="door" x="170" y="200" width="80" height="86" fill="#7a7f88"/>
-      <text x="210" y="196" text-anchor="middle" font-size="10">측면 도어</text>
       <g id="platform">
         <rect id="platform_rect" x="300" y="226" width="160" height="14" rx="3" fill="#9aa4ad"/>
         <rect id="pad1" class="pad" x="366" y="220" width="18" height="6"/>
@@ -533,10 +530,8 @@ function renderStation(s) {
   const is_slide_motion = n.active !== null && n.active.name.startsWith("SLIDE");
   const angle = n.cover_pos * 90;
   byId("door_front").style.transform = `rotate(${angle}deg)`;
-  byId("door_side").style.transform = `scaleY(${Math.max(0.05, Math.cos(angle * Math.PI / 180))})`;
   byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
   setClass("door_front", "moving", is_cover_motion);
-  setClass("door_side", "moving", is_cover_motion);
   setClass("platform_rect", "moving", is_slide_motion);
   setClass("drone", "hide", !inj.drone_detected);
   setClass("pad1", "on", n.chg_on);
@@ -913,13 +908,8 @@ const kD = 1.2;
 const kWall = 0.04;
 const kPlinth = 0.14;
 const kSlideTravel = 1.25;
-const kSideDoorOpen = Math.PI * 0.56;
 const kDroneModelUrl = "/api/drone.glb";
 const kDroneModelLift = 0.043;   // GLB 바닥(-0.108 m)을 착륙판 위에 올리는 높이
-const kSideZ0 = -0.3;
-const kSideZ1 = 0.16;
-const kSideY0 = 0.18;
-const kSideY1 = 0.66;
 const kLedColors = [0x222222, 0x2e7d32, 0xffb300, 0x1e88e5, 0x00acc1, 0xef6c00, 0xd32f2f, 0x8e24aa, 0x43a047, 0xeeeeee];
 const kLedBlinkSec = [0, 0, 0.6, 0, 1.0, 0.5, 0.25, 0, 0, 0.3];
 const kLedBreathe = 8;
@@ -1321,12 +1311,7 @@ function build(m) {
   rbox(kW + 0.12, 0.09, kD + 0.12, 0.035, white, 0, kH + 0.045, 0, root);
   rbox(kW, kH, kWall, 0.012, white, 0, kH / 2, -kD / 2 + kWall / 2, root);
   rbox(kWall, kH, kD, 0.012, white, -kW / 2 + kWall / 2, kH / 2, 0, root);
-  // 오른쪽 벽은 측면 도어 개구부를 두고 네 조각으로
-  const rx = kW / 2 - kWall / 2;
-  rbox(kWall, kH, kSideZ0 + kD / 2, 0.01, white, rx, kH / 2, (kSideZ0 - kD / 2) / 2, root);
-  rbox(kWall, kH, kD / 2 - kSideZ1, 0.01, white, rx, kH / 2, (kSideZ1 + kD / 2) / 2, root);
-  rbox(kWall, kSideY0, kSideZ1 - kSideZ0, 0.01, white, rx, kSideY0 / 2, (kSideZ0 + kSideZ1) / 2, root);
-  rbox(kWall, kH - kSideY1, kSideZ1 - kSideZ0, 0.01, white, rx, (kH + kSideY1) / 2, (kSideZ0 + kSideZ1) / 2, root);
+  rbox(kWall, kH, kD, 0.012, white, kW / 2 - kWall / 2, kH / 2, 0, root);
   for (const sx of [-1, 1]) {
     cube(0.006, 0.035, kD - 0.06, accent, sx * (kW / 2 + 0.003), kH - 0.16, 0, root);
   }
@@ -1356,21 +1341,6 @@ function build(m) {
   for (const sx of [-1, 1]) {
     const hinge = cyl(0.018, 0.018, 0.12, metal, sx * (kW / 2 - 0.12), 0, 0.02, frontPivot);
     hinge.rotation.z = Math.PI / 2;
-  }
-
-  // 측면 도어 (오른쪽 벽): 위로 밀려 올라감
-  // 측면 도어 (오른쪽 벽): 뒤쪽 모서리 경첩으로 바깥으로 열림. 커버와 같이 움직인다 (ICD 에 별도 명령 없음)
-  const sideDoor = new THREE.Group();
-  sideDoor.position.set(kW / 2 + 0.012, kSideY0, kSideZ0);
-  root.add(sideDoor);
-  const sideW = kSideZ1 - kSideZ0 - 0.01;
-  const sideH = kSideY1 - kSideY0 - 0.01;
-  rbox(0.022, sideH, sideW, 0.008, white, 0, sideH / 2, sideW / 2, sideDoor);
-  cube(0.004, sideH - 0.04, sideW - 0.04, inner, -0.012, sideH / 2, sideW / 2, sideDoor);
-  cube(0.004, 0.02, sideW - 0.06, accent, 0.012, sideH * 0.8, sideW / 2, sideDoor);
-  rbox(0.02, 0.12, 0.022, 0.008, dark, 0.02, sideH / 2, sideW - 0.05, sideDoor);
-  for (const y of [0.06, sideH - 0.06]) {
-    cyl(0.012, 0.012, 0.07, metal, 0, y, 0, sideDoor);
   }
 
   // 착륙판 (슬라이드) + 헬리패드 + 충전 패드
@@ -1527,7 +1497,7 @@ function build(m) {
     buttons.push({ mesh: btn, key, mat: btnMat });
   }
 
-  Object.assign(v, { renderer, scene, camera, controls, composer, bloom, outline, cams: [camExt, camIn], frontPivot, sideDoor, platform, drone, props, navMats, padMat, ledMat,
+  Object.assign(v, { renderer, scene, camera, controls, composer, bloom, outline, cams: [camExt, camIn], frontPivot, platform, drone, props, navMats, padMat, ledMat,
     beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons,
     cover: 0, slide: 0, clock: new THREE.Clock() });
 
@@ -1679,7 +1649,6 @@ function apply(s, dt, t) {
   v.cover += (n.cover_pos - v.cover) * k;
   v.slide += (n.slide_pos - v.slide) * k;
   v.frontPivot.rotation.x = v.cover * Math.PI / 2;
-  v.sideDoor.rotation.y = v.cover * kSideDoorOpen;
   v.platform.position.z = v.slide * kSlideTravel;
   v.drone.visible = inj.drone_detected;
   const is_nav_on = (t % 1.2) < 0.15;
