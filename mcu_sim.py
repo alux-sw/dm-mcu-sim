@@ -26,9 +26,31 @@ kChargerDefaultLimit10mA = 1000
 kChargerVoltage10mV = 5040
 kChargerCurrent10mA = 500
 kFwVersion = (1, 1, 0)
-kBmsChargePctPerSec = 0.5   # 충전 중 잔량이 오르는 속도 (%/s)
 kBmsDesignCapacitymAh = 10000
 kBmsCells = 8               # 드론 배터리 직렬 셀 수 (8S)
+kBmsBootSec = 1.0           # BMS 부팅 직후 측정값 무효(ERROR_CODE 7) 시간 (SMBus 8절)
+kBmsIdleOffSec = 300.0      # 출력 ON 에서 무부하가 이만큼 이어지면 BMS 가 출력 OFF (SMBus 5.5)
+kBmsIdleMa = 100            # 무부하 판정 전류 절대값 미만 (mA)
+kBmsTimeUnknown = 0xFFFF    # SBS 예상 시간 65535 = 해당 없음
+kBmsErrorInit = 0x7         # BATTERY_STATUS ERROR_CODE: 측정값 없음 (부팅·내부 통신 이상)
+kBmsStatusInitialized = 1 << 7
+kBmsStatusDischarging = 1 << 6
+kBmsStatusFull = 1 << 5
+kBmsStatusEmpty = 1 << 4
+kBmsFaultComm = 1 << 6
+kBmsFaultPf = 1 << 31
+# FAULT_FLAGS 비트 → (BATTERY_STATUS 알람 비트, 충전 차단, 방전 차단). SMBus 6.1 표
+kBmsFaultEffects = {
+    1 << 0: ((1 << 15) | (1 << 14), True, False),   # OV
+    1 << 1: (1 << 11, False, False),                # UV
+    1 << 2: ((1 << 12) | (1 << 14), True, False),   # OT
+    1 << 3: ((1 << 12) | (1 << 14), True, False),   # UT
+    1 << 4: (1 << 11, False, True),                 # OC_DSG
+    1 << 5: (1 << 14, True, False),                 # OC_CHG
+    1 << 8: (1 << 11, False, True),                 # UV_CRITICAL
+    1 << 9: ((1 << 14) | (1 << 11), True, True),    # SHORT_CIRCUIT
+    kBmsFaultPf: ((1 << 14) | (1 << 11), True, True),
+}
 kLogLen = 100
 kValueMax = {
     icd.SET_CLIMATE_MODE: 1, icd.SET_LIGHT: 3, icd.SET_ALARM_OUT: 3,
@@ -46,7 +68,10 @@ kDroneLocations = ("docked", "airborne")   # 드론 mock 위치. docked 면 착�
 kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
              "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
              "bms_rsoc": float, "bms_cell_mv": int, "bms_temp_c": float,
-             "bms_cycle_count": int, "bms_charging_current_ma": int}
+             "bms_cycle_count": int, "bms_charging_current_ma": int,
+             "bms_weak_cell": int, "bms_weak_cell_mv": int, "bms_charge_pct_per_s": float, "bms_load_ma": int,
+             "bms_fault_flags": int, "bms_safety_alert": int, "bms_safety_status": int,
+             "bms_pf_alert": int, "bms_pf_status": int, "bms_fet_unknown": bool}
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "drone_detected": True, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
@@ -77,6 +102,11 @@ def force_addr(key):
 
 def u16(value):
     return value & 0xFFFF
+
+
+def put32(regs, addr_hi, value):
+    regs[addr_hi] = u16(value >> 16)
+    regs[addr_hi + 1] = u16(value)
 
 
 def approach(pos, target, step):
@@ -115,6 +145,17 @@ class Mcu:
         self.bms_temp_c = 25.0
         self.bms_cycle_count = 12
         self.bms_charging_current_ma = 5000
+        self.bms_weak_cell = 0           # 이 번호(1~8) 셀만 bms_weak_cell_mv. 0 이면 전부 bms_cell_mv
+        self.bms_weak_cell_mv = 3300
+        self.bms_charge_pct_per_s = 0.5  # 충전 중 잔량이 오르는 속도 (%/s). 0 이면 충전이 멈춘 팩
+        self.bms_load_ma = 200           # 충전 아닐 때 드론 소비 전류 (mA)
+        self.bms_idle_since = None
+        self.bms_fault_flags = 0
+        self.bms_safety_alert = 0
+        self.bms_safety_status = 0
+        self.bms_pf_alert = 0
+        self.bms_pf_status = 0
+        self.bms_fet_unknown = False
         self.maint_active = 0
         self.maint_source = 0
         self.btn_release_at = {}
@@ -288,6 +329,7 @@ class Mcu:
             return
         if code == icd.BMS_POWER_ON:
             self.bms_pwr = 1
+            self.bms_idle_since = None   # ON 을 다시 쓰면 무부하 5 분을 처음부터 센다
             self.done(seq, 0, 0)
             return
         if code == icd.BMS_POWER_OFF:
@@ -496,6 +538,19 @@ class Mcu:
             self.chg_fault = 3
             self.note("charger off: no AC")
 
+    def tick_bms_idle(self, current_ma):
+        """출력 ON 에서 |전류| < kBmsIdleMa 가 kBmsIdleOffSec 이어지면 BMS 가 출력을 스스로 끔"""
+        is_idle = self.bms_pwr == 1 and abs(current_ma) < kBmsIdleMa
+        if not is_idle:
+            self.bms_idle_since = None
+            return
+        if self.bms_idle_since is None:
+            self.bms_idle_since = self.now
+        if self.now - self.bms_idle_since >= kBmsIdleOffSec:
+            self.bms_pwr = 0
+            self.bms_idle_since = None
+            self.note("BMS output auto OFF (idle %d s)" % kBmsIdleOffSec)
+
     def applied_chg_limit(self):
         limit = self.chg_limit_arg
         if limit == 0:
@@ -643,41 +698,88 @@ class Mcu:
         if self.bms_lost_at is not None:
             self.bms_lost_at = None
             self.note("BMS link up")
-        current_ma = -200
-        if self.chg_on:
+        if self.chg_on and self.bms_pwr == 0:   # 충전기 전압을 보면 BMS 가 출력을 스스로 켬
+            self.bms_pwr = 1
+            self.note("BMS output auto ON (charger)")
+        fault_flags = self.bms_fault_flags
+        if self.bms_pf_status != 0:
+            fault_flags |= kBmsFaultPf
+        alarm_bits = 0
+        is_chg_blocked = False
+        is_dsg_blocked = False
+        for bit, (alarms, blocks_chg, blocks_dsg) in kBmsFaultEffects.items():
+            if fault_flags & bit:
+                alarm_bits |= alarms
+                is_chg_blocked = is_chg_blocked or blocks_chg
+                is_dsg_blocked = is_dsg_blocked or blocks_dsg
+        chg_fet = int(not is_chg_blocked)
+        dsg_fet = int(self.bms_pwr == 1 and not is_dsg_blocked)
+        is_charging = self.chg_on and chg_fet == 1
+        current_ma = -self.bms_load_ma * dsg_fet
+        if is_charging:
             current_ma = inp[icd.CHG_CURRENT] * 10
-            self.bms_rsoc = min(100.0, self.bms_rsoc + kBmsChargePctPerSec * kTickSec)
+            self.bms_rsoc = min(100.0, self.bms_rsoc + self.bms_charge_pct_per_s * kTickSec)
+        self.tick_bms_idle(current_ma)
+        status = alarm_bits | kBmsStatusInitialized
+        if current_ma <= 0:
+            status |= kBmsStatusDischarging
+        if self.bms_rsoc >= 100:
+            status |= kBmsStatusFull
+        if self.bms_rsoc <= 0:
+            status |= kBmsStatusEmpty
+        snapshot_age = 50
+        if self.bms_pwr == 0:
+            snapshot_age = 2500   # OFF 절전은 5 s 주기 측정
+        is_measuring = self.now >= kBmsBootSec and not fault_flags & kBmsFaultComm
+        if not is_measuring:
+            status = kBmsErrorInit
+            snapshot_age = 0xFFFF
+        remain_mah = int(kBmsDesignCapacitymAh * self.bms_rsoc / 100)
+        to_full_min = kBmsTimeUnknown
+        if is_charging and self.bms_charge_pct_per_s > 0:
+            to_full_min = int(-(-(100 - self.bms_rsoc) // (self.bms_charge_pct_per_s * 60)))
+        to_empty_min = kBmsTimeUnknown
+        if current_ma < 0:
+            to_empty_min = min(remain_mah * 60 // -current_ma, kBmsTimeUnknown - 1)
+        cells = [self.bms_cell_mv] * kBmsCells
+        if 1 <= self.bms_weak_cell <= kBmsCells:
+            cells[self.bms_weak_cell - 1] = self.bms_weak_cell_mv
+        if self.bms_fet_unknown:
+            chg_fet = 0xFF
+            dsg_fet = 0xFF
         inp[icd.BMS_LINK] = 1
         inp[icd.BMS_AGE] = 0
-        inp[icd.BMS_BATTERY_STATUS] = 0x00C0
-        inp[icd.BMS_VOLTAGE] = self.bms_cell_mv * kBmsCells
-        inp[icd.BMS_CURRENT_HI] = u16(current_ma >> 16)
-        inp[icd.BMS_CURRENT_LO] = u16(current_ma)
+        inp[icd.BMS_BATTERY_STATUS] = status
+        inp[icd.BMS_VOLTAGE] = sum(cells)
+        put32(inp, icd.BMS_CURRENT_HI, current_ma)
         inp[icd.BMS_RSOC] = int(self.bms_rsoc)
-        inp[icd.BMS_REMAIN] = int(kBmsDesignCapacitymAh * self.bms_rsoc / 100)
+        inp[icd.BMS_REMAIN] = remain_mah
         inp[icd.BMS_TEMP] = int(round((self.bms_temp_c + 273.15) * 10))
         for i in range(kBmsCells):
-            inp[icd.BMS_CELL1 + i] = self.bms_cell_mv
+            inp[icd.BMS_CELL1 + i] = cells[i]
         inp[icd.BMS_CYCLE_COUNT] = self.bms_cycle_count
-        inp[icd.BMS_FAULT_FLAGS_HI] = 0
-        inp[icd.BMS_FAULT_FLAGS_LO] = 0
+        put32(inp, icd.BMS_FAULT_FLAGS_HI, fault_flags)
         inp[icd.BMS_PWR_STATE] = self.bms_pwr
-        inp[icd.BMS_CHG_FET] = 1
-        inp[icd.BMS_DSG_FET] = self.bms_pwr
+        inp[icd.BMS_CHG_FET] = chg_fet
+        inp[icd.BMS_DSG_FET] = dsg_fet
         inp[icd.BMS_CHARGING_CURRENT] = self.bms_charging_current_ma
         inp[icd.BMS_CHARGING_VOLTAGE] = 4200 * kBmsCells
-        inp[icd.BMS_SNAPSHOT_AGE] = 50
+        inp[icd.BMS_SNAPSHOT_AGE] = snapshot_age
         inp[icd.BMS_TEMP_SHUNT] = 250
         inp[icd.BMS_TEMP_CELL] = u16(int(round(self.bms_temp_c * 10)))
         inp[icd.BMS_TEMP_FET] = 260
         inp[icd.BMS_TEMP_INT] = 270
-        inp[icd.BMS_PF_STATUS_HI] = 0
-        inp[icd.BMS_PF_STATUS_LO] = 0
-        inp[icd.BMS_SAFETY_STATUS_HI] = 0
-        inp[icd.BMS_SAFETY_STATUS_LO] = 0
-        inp[icd.BMS_AVG_TIME_TO_FULL] = 30
-        inp[icd.BMS_CELL_MAX] = self.bms_cell_mv
-        inp[icd.BMS_CELL_MIN] = self.bms_cell_mv
+        put32(inp, icd.BMS_PF_STATUS_HI, self.bms_pf_status)
+        put32(inp, icd.BMS_SAFETY_STATUS_HI, self.bms_safety_status)
+        inp[icd.BMS_AVG_TIME_TO_FULL] = to_full_min
+        inp[icd.BMS_CELL_MAX] = max(cells)
+        inp[icd.BMS_CELL_MIN] = min(cells)
+        put32(inp, icd.BMS_SAFETY_ALERT_HI, self.bms_safety_alert)
+        put32(inp, icd.BMS_PF_ALERT_HI, self.bms_pf_alert)
+        # ponytail: 평균 전류·평균 방전 시간은 순시값 그대로, 1 분 이동 평균이 필요하면 그때 deque 로
+        put32(inp, icd.BMS_AVG_CURRENT_HI, current_ma)
+        inp[icd.BMS_RUN_TIME_TO_EMPTY] = to_empty_min
+        inp[icd.BMS_AVG_TIME_TO_EMPTY] = to_empty_min
         inp[icd.BMS_SERIAL_NUMBER] = 1234
         inp[icd.BMS_MANUFACTURE_DATE] = ((2026 - 1980) << 9) | (9 << 5) | 1
         inp[icd.BMS_DESIGN_CAPACITY] = kBmsDesignCapacitymAh

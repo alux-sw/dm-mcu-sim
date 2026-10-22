@@ -243,4 +243,73 @@ assert mcu.drone["stowed_report"] and mcu.inputs[icd.SLIDE_LIMITS] & 0b100
 mcu.set_drone({"link": False, "stowed_report": False})
 assert mcu.drone == {"link": False, "location": "docked", "stowed_report": False}
 
+
+def bms32(m, addr_hi):
+    return (m.inputs[addr_hi] << 16) | m.inputs[addr_hi + 1]
+
+
+# BMS 부팅 직후 1 초는 ERROR_CODE 7, 그 뒤 INITIALIZED·DISCHARGING
+bms = mcu_sim.Mcu()
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_BATTERY_STATUS] == 0x7 and bms.inputs[icd.BMS_SNAPSHOT_AGE] == 0xFFFF
+ticks(bms, int(mcu_sim.kBmsBootSec / mcu_sim.kTickSec) + 1)
+assert bms.inputs[icd.BMS_BATTERY_STATUS] == 0x00C0
+
+# 약한 셀 하나: 팩 전압·최소·최대가 따라감
+bms.set_state({"bms_weak_cell": 3, "bms_weak_cell_mv": 3300})
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_CELL1 + 2] == 3300 and bms.inputs[icd.BMS_CELL1] == 4100
+assert (bms.inputs[icd.BMS_CELL_MIN], bms.inputs[icd.BMS_CELL_MAX]) == (3300, 4100)
+assert bms.inputs[icd.BMS_VOLTAGE] == 4100 * 7 + 3300
+bms.set_state({"bms_weak_cell": 0})
+
+# PF_STATUS ≠ 0 → FAULT_FLAGS bit31, 알람 bit14·11, FET 둘 다 열림
+bms.set_state({"bms_pf_status": 0x10, "bms_pf_alert": 0x20, "bms_safety_alert": 0x1, "bms_safety_status": 0x800})
+ticks(bms, 1)
+assert bms32(bms, icd.BMS_FAULT_FLAGS_HI) == 1 << 31 and bms32(bms, icd.BMS_PF_STATUS_HI) == 0x10
+assert bms32(bms, icd.BMS_PF_ALERT_HI) == 0x20 and bms32(bms, icd.BMS_SAFETY_ALERT_HI) == 0x1
+assert bms32(bms, icd.BMS_SAFETY_STATUS_HI) == 0x800
+assert bms.inputs[icd.BMS_BATTERY_STATUS] & 0x4800 == 0x4800
+assert (bms.inputs[icd.BMS_CHG_FET], bms.inputs[icd.BMS_DSG_FET]) == (0, 0)
+bms.set_state({"bms_pf_status": 0, "bms_pf_alert": 0, "bms_safety_alert": 0, "bms_safety_status": 0})
+
+# UV_CRITICAL: 방전만 차단, 충전 FET 는 닫힘. COMM: ERROR_CODE 7
+bms.set_state({"bms_fault_flags": 1 << 8})
+ticks(bms, 1)
+assert (bms.inputs[icd.BMS_CHG_FET], bms.inputs[icd.BMS_DSG_FET]) == (1, 0)
+assert bms.inputs[icd.BMS_BATTERY_STATUS] & (1 << 11)
+bms.set_state({"bms_fault_flags": 1 << 6})
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_BATTERY_STATUS] == 0x7
+bms.set_state({"bms_fault_flags": 0, "bms_fet_unknown": 1})
+ticks(bms, 1)
+assert (bms.inputs[icd.BMS_CHG_FET], bms.inputs[icd.BMS_DSG_FET]) == (0xFF, 0xFF)
+bms.set_state({"bms_fet_unknown": 0})
+
+# 예상 시간: 방전 중 TO_EMPTY 만, 충전 중 TO_FULL 만 (속도 0 이면 모름)
+bms.set_state({"bms_rsoc": 50, "bms_load_ma": 200})
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF and bms.inputs[icd.BMS_RUN_TIME_TO_EMPTY] == 1500
+assert bms32(bms, icd.BMS_AVG_CURRENT_HI) == 0xFFFFFF38
+bms.set_state({"bms_rsoc": 50, "chg_on": 1, "bms_charge_pct_per_s": 0.5})
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 2 and bms.inputs[icd.BMS_RUN_TIME_TO_EMPTY] == 0xFFFF
+bms.set_state({"bms_charge_pct_per_s": 0})
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF
+bms.set_state({"chg_on": 0, "bms_charge_pct_per_s": 0.5})
+
+# 무부하 5 분이면 출력 자동 OFF, 충전기 전압이 보이면 자동 ON
+bms.set_state({"bms_load_ma": 50})
+ticks(bms, int(mcu_sim.kBmsIdleOffSec / mcu_sim.kTickSec) - 10)
+assert bms.bms_pwr == 1
+cmd(bms, 1, icd.BMS_POWER_ON)
+ticks(bms, 20)
+assert bms.bms_pwr == 1
+ticks(bms, int(mcu_sim.kBmsIdleOffSec / mcu_sim.kTickSec))
+assert bms.bms_pwr == 0 and bms.inputs[icd.BMS_PWR_STATE] == 0 and bms.inputs[icd.BMS_SNAPSHOT_AGE] == 2500
+bms.set_state({"chg_on": 1})
+ticks(bms, 1)
+assert bms.bms_pwr == 1
+
 print("test_sim: OK")

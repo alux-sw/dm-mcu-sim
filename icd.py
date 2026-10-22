@@ -105,6 +105,14 @@ BMS_SAFETY_STATUS_LO = 0x00A1
 BMS_AVG_TIME_TO_FULL = 0x00A2
 BMS_CELL_MAX = 0x00A3
 BMS_CELL_MIN = 0x00A4
+BMS_SAFETY_ALERT_HI = 0x00A5
+BMS_SAFETY_ALERT_LO = 0x00A6
+BMS_PF_ALERT_HI = 0x00A7
+BMS_PF_ALERT_LO = 0x00A8
+BMS_AVG_CURRENT_HI = 0x00A9
+BMS_AVG_CURRENT_LO = 0x00AA
+BMS_RUN_TIME_TO_EMPTY = 0x00AB
+BMS_AVG_TIME_TO_EMPTY = 0x00AC
 BMS_SERIAL_NUMBER = 0x00B0
 BMS_MANUFACTURE_DATE = 0x00B1
 BMS_DESIGN_CAPACITY = 0x00B2
@@ -198,6 +206,14 @@ INPUT_NAMES = {
     BMS_AVG_TIME_TO_FULL: "BMS_AVG_TIME_TO_FULL_min",
     BMS_CELL_MAX: "BMS_CELL_MAX_mV",
     BMS_CELL_MIN: "BMS_CELL_MIN_mV",
+    BMS_SAFETY_ALERT_HI: "BMS_SAFETY_ALERT_HI",
+    BMS_SAFETY_ALERT_LO: "BMS_SAFETY_ALERT_LO",
+    BMS_PF_ALERT_HI: "BMS_PF_ALERT_HI",
+    BMS_PF_ALERT_LO: "BMS_PF_ALERT_LO",
+    BMS_AVG_CURRENT_HI: "BMS_AVG_CURRENT_mA_HI",
+    BMS_AVG_CURRENT_LO: "BMS_AVG_CURRENT_mA_LO",
+    BMS_RUN_TIME_TO_EMPTY: "BMS_RUN_TIME_TO_EMPTY_min",
+    BMS_AVG_TIME_TO_EMPTY: "BMS_AVG_TIME_TO_EMPTY_min",
     BMS_SERIAL_NUMBER: "BMS_SERIAL_NUMBER",
     BMS_MANUFACTURE_DATE: "BMS_MANUFACTURE_DATE",
     BMS_DESIGN_CAPACITY: "BMS_DESIGN_CAPACITY_mAh",
@@ -410,9 +426,17 @@ INPUT_DESC = {
     BMS_PF_STATUS_LO: "PF Status U32 bitfield 하위",
     BMS_SAFETY_STATUS_HI: "Safety Status U32 bitfield 상위 (보호 동작)",
     BMS_SAFETY_STATUS_LO: "Safety Status U32 bitfield 하위",
-    BMS_AVG_TIME_TO_FULL: "만충까지 예상 시간 min (충전 시간 초과 판정)",
+    BMS_AVG_TIME_TO_FULL: "만충까지 예상 시간 min (충전 시간 초과 판정, 65535 충전 중 아님)",
     BMS_CELL_MAX: "셀 최대 전압 mV (셀 편차 감시)",
     BMS_CELL_MIN: "셀 최소 전압 mV (셀 편차 감시)",
+    BMS_SAFETY_ALERT_HI: "Safety Alert U32 bitfield 상위 (보호 동작 사전 경고)",
+    BMS_SAFETY_ALERT_LO: "Safety Alert U32 bitfield 하위",
+    BMS_PF_ALERT_HI: "PF Alert U32 bitfield 상위 (영구 고장 사전 경고)",
+    BMS_PF_ALERT_LO: "PF Alert U32 bitfield 하위",
+    BMS_AVG_CURRENT_HI: "1 분 평균 전류 I32 mA 상위 (양수 충전, 음수 방전)",
+    BMS_AVG_CURRENT_LO: "1 분 평균 전류 I32 mA 하위",
+    BMS_RUN_TIME_TO_EMPTY: "순시 전류 기준 방전 완료 예상 min (65535 방전 중 아님)",
+    BMS_AVG_TIME_TO_EMPTY: "평균 전류 기준 방전 완료 예상 min (65535 방전 중 아님)",
     BMS_SERIAL_NUMBER: "시리얼 (링크 성립 시 1회 갱신)",
     BMS_MANUFACTURE_DATE: "제조일 (SBS 형식, 링크 성립 시 1회)",
     BMS_DESIGN_CAPACITY: "설계 용량 mAh",
