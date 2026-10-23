@@ -781,7 +781,7 @@ byId("rc_delay_go").addEventListener("click", () => {
 });
 
 // 카메라 (외부·내부): 누르면 옆에 카메라 화면. 주소가 비면 시뮬 3D 시점, rtsp 주소면 실제 카메라 (서버가 MJPEG 로 바꿔 보냄)
-const CAM_PRESETS = [["시뮬레이션 (3D)", ""], ["IP 카메라 .248", "rtsp://admin:Alux2026!%40@100.88.48.248:554/stream1"]];
+const CAM_PRESETS = [["시뮬레이션 (3D)", ""], ["IP 카메라 .2", "rtsp://admin:Alux2026!%40@100.88.48.2:554/stream1"]];
 const CAM_DEFAULT_URL = CAM_PRESETS[1][1];
 window.camState = { ext: { is_open: false, url: CAM_DEFAULT_URL }, in: { is_open: false, url: CAM_DEFAULT_URL } };
 
