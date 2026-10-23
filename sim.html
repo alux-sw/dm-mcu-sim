@@ -896,12 +896,12 @@ setInterval(() => {
 </script>
 <script type="importmap">
 { "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  "three": "/assets/three/build/three.module.js",
+  "three/addons/": "/assets/three/examples/jsm/"
 } }
 </script>
 <script type="module">
-// 3D 스테이션. 3D 를 처음 켤 때 three.js·에셋을 CDN 에서 불러온다 (2D 는 인터넷 없이도 동작)
+// 3D 스테이션. 3D 를 처음 켤 때 three.js·에셋을 시뮬 서버 /assets/ 에서 불러온다 (인터넷 없이 동작)
 const kW = 1.4;
 const kH = 1.0;
 const kD = 1.2;
@@ -913,10 +913,12 @@ const kDroneModelLift = 0.043;   // GLB 바닥(-0.108 m)을 착륙판 위에 올
 const kLedColors = [0x222222, 0x2e7d32, 0xffb300, 0x1e88e5, 0x00acc1, 0xef6c00, 0xd32f2f, 0x8e24aa, 0x43a047, 0xeeeeee];
 const kLedBlinkSec = [0, 0, 0.6, 0, 1.0, 0.5, 0.25, 0, 0, 0.3];
 const kLedBreathe = 8;
-const kHdri = "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/2k/empty_warehouse_01_2k.hdr";
+const kHdri = "/assets/polyhaven/empty_warehouse_01_1k.hdr";
 const kSkyHeight = 2.4;
 const kSkyRadius = 40;
-const kTex = "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/";
+const kTex = "/assets/polyhaven/";
+const kPixelRatio = 1;
+const kShadowMapSize = 1024;
 const kRackSize = 1.8;
 const kRackHeight = 5.4;
 const kRackRowX = [-11.2, -9.4, -4.4, -2.6, 2.6, 4.4, 9.4, 11.2];   // 등 맞댄 두 줄씩, 스테이션은 x=0 통로
@@ -954,19 +956,33 @@ async function init() {
       import("three/addons/controls/OrbitControls.js"),
       import("three/addons/geometries/RoundedBoxGeometry.js"),
       import("three/addons/loaders/RGBELoader.js"),
-      import("three/addons/postprocessing/EffectComposer.js"),
-      import("three/addons/postprocessing/RenderPass.js"),
-      import("three/addons/postprocessing/UnrealBloomPass.js"),
-      import("three/addons/postprocessing/OutputPass.js"),
-      import("three/addons/postprocessing/OutlinePass.js"),
       import("three/addons/objects/GroundedSkybox.js"),
     ]);
     build(Object.assign({}, ...mods));
     document.getElementById("s3d_hint").textContent = kHint;
   } catch (e) {
-    document.getElementById("s3d_hint").textContent = "3D 를 불러오지 못했습니다 (three.js 는 인터넷에서 받습니다): " + e.message;
-    document.querySelectorAll(".cam-view").forEach(el => { el.textContent = "3D 를 불러오지 못했습니다: " + e.message; });
+    let msg = "3D 를 불러오지 못했습니다 (시뮬 서버 /assets/ 확인): " + e.message;
+    const is_webgl = /webgl/i.test(e.message);
+    if (is_webgl) {
+      msg = "브라우저가 그래픽 가속(WebGL)을 막았습니다. 브라우저를 다시 시작하세요 (chrome://restart): " + e.message;
+    }
+    show3dError(msg);
   }
+}
+
+function show3dError(msg) {
+  document.getElementById("s3d_hint").textContent = msg;
+  document.querySelectorAll(".cam-view").forEach(el => { el.textContent = msg; });
+}
+
+// GPU 가 끊기면 three.js 가 복구를 기다린다. 그동안 안내만 바꾼다
+function watchContext(canvas) {
+  canvas.addEventListener("webglcontextlost", () => {
+    document.getElementById("s3d_hint").textContent = "그래픽 연결이 끊겨 복구를 기다리는 중… 오래 걸리면 브라우저를 다시 시작하세요";
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    document.getElementById("s3d_hint").textContent = kHint;
+  });
 }
 
 // ---- 만들기 도우미 ----
@@ -1010,7 +1026,7 @@ function pbr(name, repeat) {
   const loader = new THREE.TextureLoader();
   const maps = {};
   for (const [key, suffix] of [["map", "diff"], ["normalMap", "nor_gl"], ["roughnessMap", "rough"]]) {
-    const t = loader.load(`${kTex}${name}/${name}_${suffix}_1k.jpg`);
+    const t = loader.load(`${kTex}${name}_${suffix}_1k.jpg`);
     t.wrapS = THREE.RepeatWrapping;
     t.wrapT = THREE.RepeatWrapping;
     t.repeat.set(repeat, repeat);
@@ -1071,8 +1087,7 @@ function instanced(list, material, parent) {
     m.makeScale(p[3], p[4], p[5]).setPosition(p[0], p[1], p[2]);
     mesh.setMatrixAt(i, m);
   });
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  mesh.receiveShadow = true;   // 멀리 있는 선반이라 그림자를 드리우지 않는다
   parent.add(mesh);
   return mesh;
 }
@@ -1118,6 +1133,7 @@ function racks(parent) {
       }
     }
   }
+  // ponytail: 창고 선반 전체가 장면에서 가장 무거움, 더 줄이려면 칸 수(kRackBays)나 줄 수를 줄인다
   instanced(uprights, mat(0x1f4e9c, 0.5, 0.45), parent);
   instanced(beams, mat(0xf57c00, 0.4, 0.45), parent);
   instanced(decks, mat(0x6b7078, 0.6, 0.5), parent);
@@ -1226,12 +1242,13 @@ function camRig(key, pos, target, fov, parent) {
 
 function build(m) {
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(kPixelRatio);
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.62;
   box.prepend(renderer.domElement);
+  watchContext(renderer.domElement);
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x17191c);
@@ -1255,16 +1272,6 @@ function build(m) {
   controls.minDistance = 1.2;
   controls.maxDistance = 10;
 
-  const composer = new m.EffectComposer(renderer);
-  composer.addPass(new m.RenderPass(scene, camera));
-  const outline = new m.OutlinePass(new THREE.Vector2(512, 512), scene, camera);
-  outline.visibleEdgeColor.set(0x4fc3f7);
-  outline.hiddenEdgeColor.set(0x4fc3f7);
-  outline.edgeStrength = 5;
-  composer.addPass(outline);
-  const bloom = new m.UnrealBloomPass(new THREE.Vector2(512, 512), 0.4, 0.3, 1.1);
-  composer.addPass(bloom);
-  composer.addPass(new m.OutputPass());
 
   // 천장 고천장등 두 개 (앞쪽 것이 그림자를 드리움)
   scene.add(new THREE.HemisphereLight(0xcfd8e6, 0x202020, 0.25));
@@ -1273,7 +1280,7 @@ function build(m) {
     bay.position.set(x, 6, z);
     bay.target.position.set(0, 0, 0.5);
     bay.castShadow = is_shadow;
-    bay.shadow.mapSize.set(2048, 2048);
+    bay.shadow.mapSize.set(kShadowMapSize, kShadowMapSize);
     bay.shadow.radius = 4;
     bay.shadow.bias = -0.0004;
     scene.add(bay, bay.target);
@@ -1497,7 +1504,7 @@ function build(m) {
     buttons.push({ mesh: btn, key, mat: btnMat });
   }
 
-  Object.assign(v, { renderer, scene, camera, controls, composer, bloom, outline, cams: [camExt, camIn], frontPivot, platform, drone, props, navMats, padMat, ledMat,
+  Object.assign(v, { renderer, scene, camera, controls, cams: [camExt, camIn], frontPivot, platform, drone, props, navMats, padMat, ledMat,
     beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons,
     cover: 0, slide: 0, clock: new THREE.Clock() });
 
@@ -1514,7 +1521,6 @@ function resize() {
     return;
   }
   v.renderer.setSize(w, h);
-  v.composer.setSize(w, h);
   v.camera.aspect = w / h;
   v.camera.updateProjectionMatrix();
 }
@@ -1572,10 +1578,6 @@ function bindClick() {
   el.addEventListener("pointermove", e => {
     let cursor = "grab";
     const cam = camAt(e);
-    v.outline.selectedObjects = [];
-    if (cam !== null) {
-      v.outline.selectedObjects = [cam.group];
-    }
     if (buttonAt(e) !== null || cam !== null) {
       cursor = "pointer";
     }
@@ -1598,6 +1600,10 @@ function ledLevel(pattern, t) {
 }
 
 function frame() {
+  const is_shown = !box.classList.contains("hide") || v.cams.some(isCamDrawn);
+  if (!is_shown) {   // 3D 와 3D 카메라 창이 다 닫혀 있으면 그리지 않는다
+    return;
+  }
   const dt = Math.min(v.clock.getDelta(), 0.1);
   const t = v.clock.elapsedTime;
   v.controls.update();
@@ -1606,24 +1612,28 @@ function frame() {
     apply(last, dt, t);
   }
   if (!box.classList.contains("hide")) {
-    v.composer.render();
+    v.renderer.render(v.scene, v.camera);
   }
   for (const c of v.cams) {
     renderCam(c);
   }
 }
 
-// 열린 카메라 창에 그 카메라 시점을 그린다 (창마다 렌더러 하나, 처음 열 때 만듦)
-function renderCam(c) {
+// 카메라 창이 열려 있고 실영상 주소가 없어 3D 시점을 그려야 하는지
+function isCamDrawn(c) {
   const st = window.camState[c.key];
-  if (!st.is_open || st.url !== "") {
+  return st.is_open && st.url === "";
+}
+
+// 열린 카메라 창에 그 카메라 시점을 그린다 (창마다 렌더러 하나, 처음 열 때 만듦. 그림자 없이 가볍게)
+function renderCam(c) {
+  if (!isCamDrawn(c)) {
     return;
   }
   const el = document.getElementById("camview_" + c.key);
   if (c.renderer === null) {
-    c.renderer = new THREE.WebGLRenderer({ antialias: true });
-    c.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    c.renderer.shadowMap.enabled = true;
+    c.renderer = new THREE.WebGLRenderer();
+    c.renderer.setPixelRatio(kPixelRatio);
     c.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     c.renderer.toneMappingExposure = v.renderer.toneMappingExposure;
     el.textContent = "";

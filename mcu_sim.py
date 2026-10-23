@@ -14,6 +14,7 @@ kDefaultPort = "/dev/ttyUSB0"
 kHttpPort = int(os.environ.get("MCU_SIM_HTTP_PORT", "8881"))
 kGuiFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim.html")
 kDroneModelFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drone.glb")
+kAssetDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 kTickSec = 0.1
 kCoverMoveSec = 3.0
 kSlideMoveSec = 4.0
@@ -951,7 +952,7 @@ def main():
         ("GET", "/api/drone"): lambda body: mcu.drone_state(),
         ("POST", "/api/drone"): mcu.set_drone,
         ("GET", "/api/icd"): lambda body: icd.describe(),
-    }, html_path=kGuiFile, streams={"/api/cam.mjpg": camstream.mjpeg, "/api/drone.glb": drone_model})
+    }, html_path=kGuiFile, streams={"/api/cam.mjpg": camstream.mjpeg, "/api/drone.glb": drone_model}, asset_dir=kAssetDir)
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)
     next_at = time.monotonic()
     while True:
