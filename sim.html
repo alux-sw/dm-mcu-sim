@@ -1465,7 +1465,7 @@ function build(m) {
   const ledMat = mat(0x111111, 0, 0.3, { emissive: 0x222222, emissiveIntensity: 1 });
   cube(kW - 0.16, 0.018, 0.01, ledMat, 0, kH - 0.05, kD / 2 + 0.03, root);
 
-  // 지붕 장비: 경광등·투광등·GNSS·안테나·풍속계·감시 카메라
+  // 지붕 장비: 경광등·투광등·GNSS·안테나·감시 카메라
   const roofY = kH + 0.09;
   cyl(0.06, 0.07, 0.035, dark, -kW / 2 + 0.16, roofY + 0.018, -kD / 2 + 0.2, root);
   const beaconMat = mat(0x3a0000, 0, 0.15, { emissive: 0xff1744, emissiveIntensity: 0, transparent: true, opacity: 0.85 });
@@ -1486,17 +1486,6 @@ function build(m) {
   cyl(0.05, 0.05, 0.022, white, kW / 2 - 0.2, roofY + 0.011, -kD / 2 + 0.2, root);
   for (const x of [kW / 2 - 0.34, kW / 2 - 0.06]) {
     cyl(0.006, 0.009, 0.32, dark, x, roofY + 0.16, -kD / 2 + 0.12, root);
-  }
-  cyl(0.008, 0.008, 0.3, metal, 0, roofY + 0.15, -kD / 2 + 0.15, root);
-  const anemo = new THREE.Group();
-  anemo.position.set(0, roofY + 0.31, -kD / 2 + 0.15);
-  root.add(anemo);
-  for (let i = 0; i < 3; i++) {
-    const arm = new THREE.Group();
-    arm.rotation.y = i * 2 * Math.PI / 3;
-    anemo.add(arm);
-    cube(0.12, 0.005, 0.005, metal, 0.06, 0, 0, arm);
-    place(new THREE.Mesh(new THREE.SphereGeometry(0.022, 16, 8, 0, Math.PI), dark), 0.12, 0, 0, arm);
   }
   const dome = new THREE.Mesh(new THREE.SphereGeometry(0.045, 24, 12, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), mat(0x0d0f12, 0.6, 0.08, { transparent: true, opacity: 0.92 }));
   place(dome, -kW / 2 + 0.08, kH - 0.005, kD / 2 - 0.08, root);
@@ -1548,7 +1537,7 @@ function build(m) {
   }
 
   Object.assign(v, { renderer, scene, camera, controls, cams: [camExt, camIn], frontPivot, platform, drone, props, navMats, padMat, ledMat,
-    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, anemo, heaterMat, coolerMat, estop, estopMat, buttons,
+    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, heaterMat, coolerMat, estop, estopMat, buttons,
     cover: 0, slide: 0, clock: new THREE.Clock() });
 
   new ResizeObserver(resize).observe(box);
@@ -1650,7 +1639,6 @@ function frame() {
   const dt = Math.min(v.clock.getDelta(), 0.1);
   const t = v.clock.elapsedTime;
   v.controls.update();
-  v.anemo.rotation.y += dt * 3;
   if (last !== null) {
     apply(last, dt, t);
   }
