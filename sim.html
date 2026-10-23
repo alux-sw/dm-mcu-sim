@@ -32,6 +32,12 @@
   .ig-wide button { flex: 1; margin: 0; }
   .ig-ctl { display: flex; align-items: center; gap: 4px; }
   .ig-ctl button { margin: 0; }
+  .ig-cells { grid-column: 1 / -1; margin: 2px 0 4px; }
+  .ig-cells summary { cursor: pointer; color: #9cf; font-size: 12px; }
+  .cell-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .cell-row input[type=range] { flex: 1; }
+  .cell-row .cell-v { min-width: 92px; text-align: right; font-variant-numeric: tabular-nums; }
+  .cell-row.low .cell-v { color: #f88; }
   .inject-grid input[type=number] { width: 64px; }
   .inject-grid input.num-s { width: 44px; }
   .inject-grid select { width: auto; }
@@ -252,6 +258,12 @@
       <span>링크</span><input type="checkbox" id="drone_link">
       <span>수납 보고</span><input type="checkbox" id="drone_stowed">
       <div class="ig-row"><span>위치</span><span class="ig-ctl"><button id="drone_takeoff">이륙</button><button id="drone_land">착륙</button></span></div>
+      <div class="ig-row"><span>배터리 잔량 <i class="key">bms_rsoc·bms_cell_mv</i></span>
+      <span class="ig-ctl"><input type="range" id="bms_rsoc" min="0" max="100" step="1"><span id="bms_rsoc_text"></span></span></div>
+      <details class="ig-cells"><summary>셀별 잔량 <i class="key">bms_cell_pct</i> <span id="cells_text" class="muted"></span></summary>
+        <div id="cells_list"></div>
+        <div class="ig-ctl" style="justify-content:flex-end"><button id="cells_even">전체 잔량으로 고르게</button></div>
+      </details>
 
       <div class="ig-title">MCU 응답 <span id="rc_msg" class="muted"></span></div>
       <span>무응답 <i class="key">mute</i></span><input type="checkbox" data-key="mute">
@@ -673,6 +685,12 @@ function renderSim(s) {
   byId("drone_link").checked = s.drone.link;
   byId("drone_stowed").checked = s.drone.stowed_report;
   setText("drone_text", `위치 ${s.drone.location}`);
+  const rsoc = byId("bms_rsoc");
+  if (!rsoc.matches(":active")) {   // 끌고 있는 동안 200 ms 갱신이 손잡이를 되돌리지 않게
+    rsoc.value = Math.floor(s.settable.bms_rsoc);
+  }
+  setText("bms_rsoc_text", `${Math.floor(s.settable.bms_rsoc)} % · 셀 ${(s.settable.bms_cell_mv / 1000).toFixed(2)} V`);
+  renderCells(s.bms_cells);
   let active = "-";
   if (n.active) {
     active = `#${n.active.seq} ${n.active.name}`;
@@ -858,6 +876,31 @@ byId("drone_link").addEventListener("change", e => postJson("/api/drone", { link
 byId("drone_stowed").addEventListener("change", e => postJson("/api/drone", { stowed_report: e.target.checked }));
 byId("drone_takeoff").addEventListener("click", () => postJson("/api/drone", { location: "airborne" }));
 byId("drone_land").addEventListener("click", () => postJson("/api/drone", { location: "docked" }));
+byId("bms_rsoc").addEventListener("input", e => postJson("/api/set", { bms_rsoc: Number(e.target.value) }));
+byId("cells_list").addEventListener("input", e => {
+  postJson("/api/set", { bms_cell_pct: { cell: Number(e.target.dataset.cell), pct: Number(e.target.value) } });
+});
+byId("cells_even").addEventListener("click", () => postJson("/api/set", { bms_cell_reset: true }));
+
+// 셀별 잔량: 행은 처음 한 번만 만들고 값만 갱신 (끌고 있는 슬라이더는 건드리지 않음)
+function renderCells(cells) {
+  const list = byId("cells_list");
+  if (list.children.length === 0) {
+    list.innerHTML = cells.map((c, i) =>
+      `<div class="cell-row" id="cell_row_${i}"><span>셀 ${i + 1}</span><input type="range" min="0" max="100" step="1" data-cell="${i + 1}"><span class="cell-v"></span></div>`).join("");
+  }
+  cells.forEach((c, i) => {
+    const row = byId("cell_row_" + i);
+    const slider = row.querySelector("input");
+    if (!slider.matches(":active")) {
+      slider.value = Math.round(c.pct);
+    }
+    row.querySelector(".cell-v").textContent = `${Math.round(c.pct)} % · ${(c.mv / 1000).toFixed(2)} V`;
+    row.classList.toggle("low", c.mv < Math.max(...cells.map(x => x.mv)) - 100);
+  });
+  const mvs = cells.map(c => c.mv);
+  setText("cells_text", `편차 ${Math.max(...mvs) - Math.min(...mvs)} mV`);
+}
 byId("estop_btn").addEventListener("click", () => {
   if (simState === null) {
     return;

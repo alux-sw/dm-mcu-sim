@@ -27,8 +27,11 @@ kChargerDefaultLimit10mA = 1000
 kChargerVoltage10mV = 5040
 kChargerCurrent10mA = 500
 kFwVersion = (1, 1, 0)
-kBmsDesignCapacitymAh = 10000
+kBmsDesignCapacitymAh = 8000   # 설계 = 만충 용량 고정 (SMBus 0x10·0x18)
 kBmsCells = 8               # 드론 배터리 직렬 셀 수 (8S)
+kBmsCellEmptyMv = 3300      # 잔량 0 % 일 때 셀 전압 (mV)
+kBmsCellFullMv = 4200       # 잔량 100 % 일 때 셀 전압 (mV)
+kBmsSocFitRounds = 10       # 전체 잔량 설정 시 셀 평균을 목표에 맞추는 반복 횟수
 kBmsBootSec = 1.0           # BMS 부팅 직후 측정값 무효(ERROR_CODE 7) 시간 (SMBus 8절)
 kBmsIdleOffSec = 300.0      # 출력 ON 에서 무부하가 이만큼 이어지면 BMS 가 출력 OFF (SMBus 5.5)
 kBmsIdleMa = 100            # 무부하 판정 전류 절대값 미만 (mA)
@@ -118,6 +121,18 @@ def approach(pos, target, step):
     return pos
 
 
+def cell_mv_of(rsoc):
+    """잔량(%) → 셀 전압(mV)."""
+    # ponytail: 직선, 실제 리튬 셀처럼 중간이 평평한 곡선이 필요하면 OCV 표 보간으로
+    return int(round(kBmsCellEmptyMv + (kBmsCellFullMv - kBmsCellEmptyMv) * rsoc / 100))
+
+
+def pct_of_cell_mv(mv):
+    """셀 전압(mV) → 잔량(%). cell_mv_of 의 역."""
+    pct = (mv - kBmsCellEmptyMv) * 100 / (kBmsCellFullMv - kBmsCellEmptyMv)
+    return max(0.0, min(100.0, pct))
+
+
 class Mcu:
     def __init__(self):
         self.lock = threading.Lock()
@@ -141,8 +156,9 @@ class Mcu:
         self.chg_limit_arg = 0
         self.bms_pwr = 1
         self.bms_lost_at = None
-        self.bms_rsoc = 80.0
-        self.bms_cell_mv = 4100
+        self.bms_cells_mv = [float(cell_mv_of(80.0))] * kBmsCells   # 셀 전압 (mV). 잔량·셀 평균 전압은 이 값에서 계산
+        self.bms_rsoc = 0.0      # sync_soc 가 셀 평균으로 채움
+        self.bms_cell_mv = 0
         self.bms_temp_c = 25.0
         self.bms_cycle_count = 12
         self.bms_charging_current_ma = 5000
@@ -150,6 +166,7 @@ class Mcu:
         self.bms_weak_cell_mv = 3300
         self.bms_charge_pct_per_s = 0.5  # 충전 중 잔량이 오르는 속도 (%/s). 0 이면 충전이 멈춘 팩
         self.bms_load_ma = 200           # 충전 아닐 때 드론 소비 전류 (mA)
+        self.sync_soc()
         self.bms_idle_since = None
         self.bms_fault_flags = 0
         self.bms_safety_alert = 0
@@ -682,7 +699,9 @@ class Mcu:
         inp[icd.CHG_CURRENT] = 0
         if self.chg_on:
             inp[icd.CHG_VOLTAGE] = kChargerVoltage10mV
-            inp[icd.CHG_CURRENT] = min(kChargerCurrent10mA, self.applied_chg_limit())
+            is_full = self.bms_rsoc >= 100
+            if not is_full:   # 완충이면 출력은 켠 채 전류만 0
+                inp[icd.CHG_CURRENT] = min(kChargerCurrent10mA, self.applied_chg_limit())
         inp[icd.CHG_CURRENT_LIMIT] = self.applied_chg_limit()
         inp[icd.CONTACT_TEMP] = u16(int(self.inject["contact_temp"] * 10))
         inp[icd.CHG_FAULT_CODE] = self.chg_fault
@@ -719,7 +738,9 @@ class Mcu:
         current_ma = -self.bms_load_ma * dsg_fet
         if is_charging:
             current_ma = inp[icd.CHG_CURRENT] * 10
-            self.bms_rsoc = min(100.0, self.bms_rsoc + self.bms_charge_pct_per_s * kTickSec)
+            step_mv = (kBmsCellFullMv - kBmsCellEmptyMv) * self.bms_charge_pct_per_s * kTickSec / 100
+            self.bms_cells_mv = [min(float(kBmsCellFullMv), c + step_mv) for c in self.bms_cells_mv]   # 다 찬 셀은 멈춤
+            self.sync_soc()
         self.tick_bms_idle(current_ma)
         status = alarm_bits | kBmsStatusInitialized
         if current_ma <= 0:
@@ -742,9 +763,7 @@ class Mcu:
         to_empty_min = kBmsTimeUnknown
         if current_ma < 0:
             to_empty_min = min(remain_mah * 60 // -current_ma, kBmsTimeUnknown - 1)
-        cells = [self.bms_cell_mv] * kBmsCells
-        if 1 <= self.bms_weak_cell <= kBmsCells:
-            cells[self.bms_weak_cell - 1] = self.bms_weak_cell_mv
+        cells = [int(round(c)) for c in self.output_cells()]
         if self.bms_fet_unknown:
             chg_fet = 0xFF
             dsg_fet = 0xFF
@@ -785,7 +804,7 @@ class Mcu:
         inp[icd.BMS_MANUFACTURE_DATE] = ((2026 - 1980) << 9) | (9 << 5) | 1
         inp[icd.BMS_DESIGN_CAPACITY] = kBmsDesignCapacitymAh
         inp[icd.BMS_DESIGN_VOLTAGE] = 3700 * kBmsCells
-        inp[icd.BMS_FULL_CHARGE_CAPACITY] = 9800
+        inp[icd.BMS_FULL_CHARGE_CAPACITY] = kBmsDesignCapacitymAh
         inp[icd.BMS_DEVICE_TYPE] = 1
         inp[icd.BMS_FW_VERSION] = 0x0102
         inp[icd.BMS_HW_VERSION] = 0x0001
@@ -828,6 +847,7 @@ class Mcu:
                 "drone": dict(self.drone),
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
                 "settable": {k: getattr(self, k) for k in kSettable},
+                "bms_cells": [{"mv": mv, "pct": pct_of_cell_mv(mv)} for mv in self.inputs[icd.BMS_CELL1:icd.BMS_CELL1 + kBmsCells]],
                 "regs": {name: self.signed_input(a) for a, name in icd.INPUT_NAMES.items()},
                 "log": list(self.log),
             }
@@ -897,11 +917,44 @@ class Mcu:
             self.note("drone %s" % self.drone)
         return self.snapshot()
 
+    def output_cells(self):
+        """BMS 가 내보낼 셀 전압 (mV). bms_weak_cell 이면 그 셀만 bms_weak_cell_mv."""
+        cells = list(self.bms_cells_mv)
+        if 1 <= self.bms_weak_cell <= kBmsCells:
+            cells[self.bms_weak_cell - 1] = float(self.bms_weak_cell_mv)
+        return cells
+
+    def sync_soc(self):
+        """전체 잔량 = 셀 잔량 평균, bms_cell_mv = 셀 평균 전압 (셀이 바뀔 때마다)."""
+        cells = self.output_cells()
+        self.bms_rsoc = round(sum(pct_of_cell_mv(c) for c in cells) / kBmsCells, 3)
+        self.bms_cell_mv = int(round(sum(cells) / kBmsCells))
+
     def set_state(self, body):
         """본문 예: {"fault_code": 0, "SET_LIGHT": 3}. 내부 상태나 보유 레지스터를 그 값으로 바꿉니다 (force 와 달리 시뮬 동작이 따라감)"""
         holding_addr = {name: a for a, name in icd.HOLDING_NAMES.items()}
         with self.lock:
             for key, value in body.items():
+                if key == "bms_rsoc":   # 셀 사이 차이는 두고 전부 같은 만큼 옮겨 셀 평균을 그 잔량으로
+                    for _ in range(kBmsSocFitRounds):   # 0·100 % 에 걸린 셀은 못 움직이니 남은 셀로 몇 번 더 맞춘다
+                        shift_mv = (float(value) - self.bms_rsoc) * (kBmsCellFullMv - kBmsCellEmptyMv) / 100
+                        self.bms_cells_mv = [max(float(kBmsCellEmptyMv), min(float(kBmsCellFullMv), c + shift_mv)) for c in self.bms_cells_mv]
+                        self.sync_soc()
+                    self.note("set bms_rsoc=%s" % value)
+                    continue
+                if key == "bms_cell_mv":   # 셀 전부 그 전압으로
+                    self.bms_cells_mv = [float(value)] * kBmsCells
+                    self.note("set bms_cell_mv=%s" % value)
+                    continue
+                if key == "bms_cell_pct":   # {"cell": 1~8, "pct": 0~100} 그 셀만 그 잔량의 전압으로
+                    i = int(value["cell"]) - 1
+                    self.bms_cells_mv[i] = float(cell_mv_of(float(value["pct"])))
+                    self.note("set cell%d %.0f%%" % (i + 1, float(value["pct"])))
+                    continue
+                if key == "bms_cell_reset":   # 셀 편차를 지워 전부 셀 평균 전압으로
+                    self.bms_cells_mv = [sum(self.bms_cells_mv) / kBmsCells] * kBmsCells
+                    self.note("set cells even")
+                    continue
                 if key in kSettable:
                     setattr(self, key, kSettable[key](value))
                     self.note("set %s=%s" % (key, getattr(self, key)))
@@ -909,6 +962,7 @@ class Mcu:
                 if key in holding_addr:
                     self.note("set %s=%d" % (key, int(value) & 0xFFFF))
                     self.apply_holding({holding_addr[key]: int(value) & 0xFFFF})
+            self.sync_soc()
         return self.snapshot()
 
 

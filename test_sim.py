@@ -258,10 +258,40 @@ assert bms.inputs[icd.BMS_BATTERY_STATUS] == 0x00C0
 # 약한 셀 하나: 팩 전압·최소·최대가 따라감
 bms.set_state({"bms_weak_cell": 3, "bms_weak_cell_mv": 3300})
 ticks(bms, 1)
-assert bms.inputs[icd.BMS_CELL1 + 2] == 3300 and bms.inputs[icd.BMS_CELL1] == 4100
-assert (bms.inputs[icd.BMS_CELL_MIN], bms.inputs[icd.BMS_CELL_MAX]) == (3300, 4100)
-assert bms.inputs[icd.BMS_VOLTAGE] == 4100 * 7 + 3300
+cell_mv = int(round(bms.bms_cells_mv[0]))
+assert bms.inputs[icd.BMS_CELL1 + 2] == 3300 and bms.inputs[icd.BMS_CELL1] == cell_mv
+assert (bms.inputs[icd.BMS_CELL_MIN], bms.inputs[icd.BMS_CELL_MAX]) == (3300, cell_mv)
+assert bms.inputs[icd.BMS_VOLTAGE] == cell_mv * 7 + 3300
 bms.set_state({"bms_weak_cell": 0})
+
+# 전체 잔량 = 셀 잔량 평균. 전체를 바꾸면 셀이 같은 만큼 움직이고, 셀 하나를 바꾸면 전체가 다시 계산됨
+bms.set_state({"bms_rsoc": 0})
+assert bms.bms_cell_mv == mcu_sim.kBmsCellEmptyMv
+bms.set_state({"bms_rsoc": 100})
+assert bms.bms_cell_mv == mcu_sim.kBmsCellFullMv
+bms.set_state({"bms_rsoc": 80})
+bms.set_state({"bms_cell_pct": {"cell": 2, "pct": 40}})
+ticks(bms, 1)
+assert bms.bms_rsoc == 75.0 and bms.inputs[icd.BMS_RSOC] == 75
+assert bms.inputs[icd.BMS_CELL1 + 1] == mcu_sim.cell_mv_of(40) and bms.inputs[icd.BMS_CELL1] == mcu_sim.cell_mv_of(80)
+bms.set_state({"bms_rsoc": 50})   # 셀 사이 차이 유지
+ticks(bms, 1)
+assert bms.inputs[icd.BMS_CELL1] - bms.inputs[icd.BMS_CELL1 + 1] == mcu_sim.cell_mv_of(80) - mcu_sim.cell_mv_of(40)
+assert bms.inputs[icd.BMS_RSOC] == 50 and bms.inputs[icd.BMS_REMAIN] == 4000
+bms.set_state({"bms_cell_pct": {"cell": 2, "pct": 0}, "bms_rsoc": 10})   # 0 % 에 걸린 셀은 두고 나머지로 평균을 맞춤
+assert abs(bms.bms_rsoc - 10) < 0.01 and bms.bms_cells_mv[1] == mcu_sim.kBmsCellEmptyMv
+bms.set_state({"bms_cell_reset": True})
+assert len(set(bms.bms_cells_mv)) == 1 and abs(bms.bms_rsoc - 10) < 0.01   # 고르게 해도 평균은 그대로
+bms.set_state({"bms_cell_mv": 3900})
+assert bms.bms_cells_mv == [3900.0] * 8 and abs(bms.bms_rsoc - 66.667) < 0.01
+bms.set_state({"bms_rsoc": 10, "chg_on": 1})   # 충전하면 셀이 같이 오르고 평균 잔량도 오름
+ticks(bms, 10)
+assert bms.bms_rsoc > 10 and len(set(bms.bms_cells_mv)) == 1
+bms.set_state({"bms_rsoc": 100})
+ticks(bms, 2)
+assert bms.inputs[icd.CHG_OUTPUT_ON] == 1 and bms.inputs[icd.CHG_CURRENT] == 0 and bms32(bms, icd.BMS_CURRENT_HI) == 0
+assert bms.inputs[icd.BMS_FULL_CHARGE_CAPACITY] == 8000 and bms.inputs[icd.BMS_REMAIN] == 8000
+bms.set_state({"chg_on": 0, "bms_rsoc": 80})
 
 # PF_STATUS ≠ 0 → FAULT_FLAGS bit31, 알람 bit14·11, FET 둘 다 열림
 bms.set_state({"bms_pf_status": 0x10, "bms_pf_alert": 0x20, "bms_safety_alert": 0x1, "bms_safety_status": 0x800})
@@ -289,7 +319,7 @@ bms.set_state({"bms_fet_unknown": 0})
 # 예상 시간: 방전 중 TO_EMPTY 만, 충전 중 TO_FULL 만 (속도 0 이면 모름)
 bms.set_state({"bms_rsoc": 50, "bms_load_ma": 200})
 ticks(bms, 1)
-assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF and bms.inputs[icd.BMS_RUN_TIME_TO_EMPTY] == 1500
+assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF and bms.inputs[icd.BMS_RUN_TIME_TO_EMPTY] == 1200
 assert bms32(bms, icd.BMS_AVG_CURRENT_HI) == 0xFFFFFF38
 bms.set_state({"bms_rsoc": 50, "chg_on": 1, "bms_charge_pct_per_s": 0.5})
 ticks(bms, 1)
