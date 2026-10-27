@@ -209,10 +209,8 @@
       <text x="60" y="200" text-anchor="middle" font-size="10">현장 버튼 (클릭)</text>
       <circle id="btn_door" class="pbtn" cx="45" cy="222" r="9"/>
       <text x="60" y="226" font-size="10">도어</text>
-      <circle id="btn_slide" class="pbtn" cx="45" cy="250" r="9"/>
-      <text x="60" y="254" font-size="10">슬라이드</text>
-      <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
-      <text x="60" y="282" font-size="10">정비</text>
+      <circle id="btn_maint" class="pbtn" cx="45" cy="250" r="9"/>
+      <text x="60" y="254" font-size="10">정비</text>
       <g id="cam2d_ext" class="cam2d">
         <title>외부 카메라 (클릭: 카메라 화면)</title>
         <rect class="cam-body" x="548" y="80" width="4" height="22"/>
@@ -271,7 +269,7 @@
 
       <div class="ig-title">현장 버튼 <span class="muted">(한 번 누름)</span></div>
       <div class="ig-wide">
-        <button data-key="btn_door">도어</button><button data-key="btn_slide">슬라이드</button><button data-key="btn_maint">정비</button>
+        <button data-key="btn_door">도어</button><button data-key="btn_maint">정비</button>
       </div>
 
       <div class="ig-title">드론 배터리</div>
@@ -350,7 +348,7 @@ function renderLocks(s) {
 }
 
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
-const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
+const INJECT_PULSES = ["btn_door", "btn_maint"];
 const SLIDE_TRAVEL = 330;
 const INPUT_SECTIONS = [[0x00, "명령 피드백"], [0x10, "MCU 상태"], [0x20, "커버/슬라이드"], [0x30, "충전기"], [0x40, "환경"], [0x50, "전원"], [0x60, "출력 되읽기"], [0x80, "BMS"], [0xB0, "BMS 식별"]];
 let ICD = null;
@@ -555,8 +553,8 @@ document.addEventListener("keydown", e => {
 function renderStation(s) {
   const n = s.internal;
   const inj = s.inject;
-  const is_cover_motion = n.active !== null && n.active.name.startsWith("COVER");
-  const is_slide_motion = n.active !== null && n.active.name.startsWith("SLIDE");
+  const is_cover_motion = n.cover_state === "opening" || n.cover_state === "closing";
+  const is_slide_motion = n.slide_state === "extending" || n.slide_state === "retracting";
   const angle = n.cover_pos * 90;
   byId("door_front").style.transform = `rotate(${angle}deg)`;
   byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
@@ -1596,7 +1594,7 @@ function build(m) {
   estop.rotation.z = Math.PI / 2;
   label("E-STOP", "#ffc107", panelX, 0.955, panelZ, 0.22, root);
   const buttons = [{ mesh: estop, key: "estop", mat: estopMat }];
-  for (const [i, [key, text, color]] of [["btn_door", "도어", 0x2e7d32], ["btn_slide", "슬라이드", 0x1565c0], ["btn_maint", "정비", 0x7b1fa2]].entries()) {
+  for (const [i, [key, text, color]] of [["btn_door", "도어", 0x2e7d32], ["btn_maint", "정비", 0x7b1fa2]].entries()) {
     const y = 0.64 - i * 0.095;
     const z = panelZ - 0.09;
     const btnMat = mat(color, 0.2, 0.35, { emissive: color, emissiveIntensity: 0 });

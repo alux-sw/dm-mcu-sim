@@ -66,7 +66,7 @@ kReadback = {
     icd.SET_ALARM_OUT: icd.ALARM_OUT_STATE,
     icd.SET_LED_PATTERN: icd.LED_PATTERN,
 }
-kButtons = ("btn_door", "btn_slide", "btn_maint")
+kButtons = ("btn_door", "btn_maint")
 # 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
 kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
              "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
@@ -78,7 +78,7 @@ kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_po
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "drone_detected": True, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
-    "btn_door": False, "btn_slide": False, "btn_maint": False,
+    "btn_door": False, "btn_maint": False,
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
     "cover_sec": kCoverMoveSec, "slide_sec": kSlideMoveSec, "motion_timeout_sec": kMotionTimeoutSec,
     "exc_code": 0, "exc_n": 0,          # 다음 n 회 응답을 예외로 (2 주소, 3 값, 4 장치오류)
@@ -426,12 +426,8 @@ class Mcu:
             self.set_maint(1 - self.maint_active, 2)
             return
         code = icd.COVER_OPEN
-        if key == "btn_door" and self.cover_pos >= 1.0:
+        if self.cover_pos >= 1.0:
             code = icd.COVER_CLOSE
-        if key == "btn_slide":
-            code = icd.SLIDE_EXTEND
-            if self.slide_pos >= 1.0:
-                code = icd.SLIDE_RETRACT
         is_remote_motion = self.active is not None and self.active["seq"] != 0
         if is_remote_motion:
             is_same = self.active["code"] == code
@@ -517,20 +513,26 @@ class Mcu:
             self.latch_fault(icd.HI6)
             self.enter_safe_hold("E-Stop")
 
+    def is_cover_turn(self, code):
+        """지금 움직일 차례가 커버인지. 열기는 커버가 다 열릴 때까지, 닫기는 슬라이드가 다 들어온 뒤"""
+        if code == icd.COVER_OPEN:
+            return self.cover_pos < 1.0
+        return self.slide_pos <= 0.0
+
     def tick_motion(self):
         a = self.active
         if a is None:
             return
-        code = a["code"]
+        # 모터 하나: 열기는 커버 → 슬라이드, 닫기는 슬라이드 → 커버
         target = 0.0
-        if code in (icd.COVER_OPEN, icd.SLIDE_EXTEND):
+        if a["code"] == icd.COVER_OPEN:
             target = 1.0
-        if code in (icd.COVER_OPEN, icd.COVER_CLOSE):
+        is_cover_turn = self.is_cover_turn(a["code"])
+        if is_cover_turn:
             self.cover_pos = approach(self.cover_pos, target, kTickSec / max(self.inject["cover_sec"], kTickSec))
-            pos = self.cover_pos
         else:
             self.slide_pos = approach(self.slide_pos, target, kTickSec / max(self.inject["slide_sec"], kTickSec))
-            pos = self.slide_pos
+        pos = (self.cover_pos + self.slide_pos) / 2
         is_local = a["seq"] == 0
         if not is_local:
             self.inputs[icd.PROGRESS_PCT] = int(abs(pos - (1.0 - target)) * 100)
@@ -603,8 +605,6 @@ class Mcu:
         local_btn = 0
         if inj["btn_door"]:
             local_btn |= 1 << 0
-        if inj["btn_slide"]:
-            local_btn |= 1 << 1
         inp[icd.LOCAL_BTN] = local_btn
         self.fill_cover_slide(is_motion)
         self.fill_charger()
@@ -638,7 +638,7 @@ class Mcu:
         inp = self.inputs
         is_closed = self.cover_pos <= 0.0
         is_open = self.cover_pos >= 1.0
-        is_cover_motion = is_motion and self.active["code"] in (icd.COVER_OPEN, icd.COVER_CLOSE)
+        is_cover_motion = is_motion and self.is_cover_turn(self.active["code"])
         state = 4
         if is_cover_motion and self.active["code"] == icd.COVER_OPEN:
             state = 1
@@ -662,7 +662,7 @@ class Mcu:
             inp[icd.COVER_CURRENT] = kMotionCurrentmA
         is_slide_motion = is_motion and not is_cover_motion
         state = 4
-        if is_slide_motion and self.active["code"] == icd.SLIDE_EXTEND:
+        if is_slide_motion and self.active["code"] == icd.COVER_OPEN:
             state = 1
         elif is_slide_motion:
             state = 3
