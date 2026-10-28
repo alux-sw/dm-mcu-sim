@@ -84,6 +84,17 @@
   .lamp.on { fill: #fff59d; filter: drop-shadow(0 0 6px #fff59d); }
   .interior { fill: #24262b; }
   .interior.lit { fill: #3a3b2c; }
+  .interior.heating { fill: #3b2620; }
+  .interior.cooling { fill: #1d2b3a; }
+  .nav { fill: #333; }
+  .nav.on { fill: #76ff03; animation: blink 1.2s infinite; }
+  .bat { fill: #66bb6a; }
+  .bat.charging { fill: #ffb300; animation: breathe 1s infinite; }
+  .clim { fill: #2b2d31; stroke: #555; }
+  .clim.heat { fill: #e64a19; stroke: #ff8a65; }
+  .clim.cool { fill: #0288d1; stroke: #4fc3f7; }
+  .clim.fan { fill: #2e7d32; stroke: #81c784; }
+  .clim-label { font-size: 9px; fill: #ddd; pointer-events: none; }
   .pad { fill: #777; }
   .pad.on { fill: #ffd54f; animation: blink .5s infinite; }
   .dim { opacity: .2; }
@@ -168,6 +179,11 @@
           <rect x="378" y="198" width="44" height="18" rx="5" fill="#cfd8dc"/>
           <rect x="384" y="216" width="6" height="4" fill="#555"/>
           <rect x="410" y="216" width="6" height="4" fill="#555"/>
+          <circle id="nav_l" class="nav" cx="330" cy="202" r="3"/>
+          <circle id="nav_r" class="nav" cx="470" cy="202" r="3"/>
+          <rect x="382" y="203" width="36" height="8" rx="1" fill="#37474f"/>
+          <rect id="bat_fill" class="bat" x="382" y="203" width="0" height="8" rx="1"/>
+          <text id="drone_pwr" x="400" y="190" text-anchor="middle" font-size="10"></text>
         </g>
         <text id="bolt" class="hide" x="400" y="262" text-anchor="middle" font-size="18">⚡</text>
         <text id="chg_text" x="400" y="280" text-anchor="middle"></text>
@@ -181,10 +197,13 @@
       <text id="buzzer" class="dim" x="172" y="140" font-size="16">🔔</text>
       <circle id="indicator" cx="205" cy="133" r="5" fill="#444"/>
       <text x="190" y="156" text-anchor="middle" font-size="10">알람</text>
-      <text id="heater" class="dim" x="480" y="140" font-size="16">🔥</text>
-      <text id="cooler" class="dim" x="510" y="140" font-size="16">❄️</text>
-      <text id="fan" class="dim" x="540" y="140" font-size="16">🌀</text>
-      <text x="515" y="156" text-anchor="middle" font-size="10">공조</text>
+      <rect id="heater" class="clim" x="456" y="116" width="32" height="16" rx="3"/>
+      <text class="clim-label" x="472" y="127" text-anchor="middle">히터</text>
+      <rect id="cooler" class="clim" x="491" y="116" width="32" height="16" rx="3"/>
+      <text class="clim-label" x="507" y="127" text-anchor="middle">에어컨</text>
+      <rect id="fan" class="clim" x="526" y="116" width="32" height="16" rx="3"/>
+      <text class="clim-label" x="542" y="127" text-anchor="middle">팬</text>
+      <text id="climate_text" x="507" y="146" text-anchor="middle" font-size="10">공조</text>
       <circle id="estop_btn" cx="60" cy="140" r="16"/>
       <text x="60" y="172" text-anchor="middle" font-size="10">E-STOP (클릭)</text>
       <text x="60" y="200" text-anchor="middle" font-size="10">현장 버튼 (클릭)</text>
@@ -543,6 +562,19 @@ function renderStation(s) {
   setClass("door_front", "moving", is_cover_motion);
   setClass("platform_rect", "moving", is_slide_motion);
   setClass("drone", "hide", !inj.drone_detected);
+  const is_drone_on = s.regs.BMS_DSG_FET === 1;
+  setClass("nav_l", "on", is_drone_on);
+  setClass("nav_r", "on", is_drone_on);
+  let pwrText = "전원 꺼짐";
+  if (is_drone_on) {
+    pwrText = "전원 켜짐";
+  }
+  if (s.regs.BMS_LINK !== 1) {
+    pwrText = "배터리 응답 없음";
+  }
+  setText("drone_pwr", pwrText);
+  byId("bat_fill").setAttribute("width", 36 * s.regs.BMS_RSOC_PCT / 100);
+  setClass("bat_fill", "charging", n.chg_on);
   setClass("pad1", "on", n.chg_on);
   setClass("pad2", "on", n.chg_on);
   setClass("bolt", "hide", !n.chg_on);
@@ -568,10 +600,25 @@ function renderStation(s) {
   }
   byId("indicator").setAttribute("fill", indicatorFill);
   setClass("indicator", "blink", is_indicator);
-  setClass("heater", "dim", (n.climate_out & 1) === 0);
-  setClass("cooler", "dim", (n.climate_out & 2) === 0);
-  setClass("fan", "dim", (n.climate_out & 4) === 0);
-  setClass("fan", "spin", (n.climate_out & 4) !== 0);
+  const is_heater = (n.climate_out & 1) !== 0;
+  const is_cooler = (n.climate_out & 2) !== 0;
+  const is_fan = (n.climate_out & 4) !== 0;
+  setClass("heater", "heat", is_heater);
+  setClass("cooler", "cool", is_cooler);
+  setClass("fan", "fan", is_fan);
+  setClass("interior", "heating", is_heater);
+  setClass("interior", "cooling", is_cooler);
+  let climateText = "공조 꺼짐";
+  if (s.regs.CLIMATE_MODE === 1) {
+    climateText = "공조 자동";
+  }
+  if (is_heater) {
+    climateText += " · 난방 중";
+  }
+  if (is_cooler) {
+    climateText += " · 냉방 중";
+  }
+  setText("climate_text", climateText);
   setClass("estop_btn", "on", inj.estop);
   INJECT_PULSES.forEach(k => setClass(k, "on", inj[k]));
   setClass("btn_maint", "maint-on", n.maint_active === 1);
@@ -1449,7 +1496,28 @@ function build(m) {
     model.traverse(o => { o.castShadow = true; });
     drone.clear();
     drone.add(model);
+    // 전원등: 프로펠러(prop0~3) 가운데 허브 위에 하나씩
+    drone.updateMatrixWorld(true);
+    model.traverse(o => {
+      if (!/^prop\d/.test(o.name)) {
+        return;
+      }
+      const box = new THREE.Box3().setFromObject(o);
+      const at = drone.worldToLocal(box.getCenter(new THREE.Vector3()));
+      const top = drone.worldToLocal(box.max.clone());
+      place(new THREE.Mesh(new THREE.SphereGeometry(0.01, 12, 8), pwrMat), at.x, top.y + 0.004, at.z, drone);
+    });
   }).catch(() => {});
+  // 드론 전원(초록, 프로펠러 허브)·충전(주황, 착륙판 바닥 앞쪽 띠) 표시등. 기본 모형이면 팔 끝 항법등이 전원등
+  const pwrMat = mat(0x111111, 0, 0.3, { emissive: 0x76ff03, emissiveIntensity: 0 });
+  const chgMat = mat(0x222222, 0, 0.3, { emissive: 0xffb300, emissiveIntensity: 0 });
+  rbox(0.3, 0.006, 0.025, 0.003, chgMat, 0, 0.329, (kD - 0.22) / 2 - 0.05, platform);
+  const pwrLight = new THREE.PointLight(0x76ff03, 0, 0.6);
+  pwrLight.position.set(0, 0.05, 0);
+  drone.add(pwrLight);
+  const chgLight = new THREE.PointLight(0xffb300, 0, 0.6);
+  chgLight.position.set(0, 0.36, (kD - 0.22) / 2 - 0.05);
+  platform.add(chgLight);
 
   // 상태 LED 띠 (정면 위 프레임)
   const ledMat = mat(0x111111, 0, 0.3, { emissive: 0x222222, emissiveIntensity: 1 });
@@ -1502,8 +1570,16 @@ function build(m) {
   }
   const heaterMat = mat(0x220800, 0, 0.3, { emissive: 0xff5722, emissiveIntensity: 0 });
   const coolerMat = mat(0x000a22, 0, 0.3, { emissive: 0x29b6f6, emissiveIntensity: 0 });
-  place(new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), heaterMat), -kW / 2 - 0.01, 0.8, -0.3, root);
-  place(new THREE.Mesh(new THREE.SphereGeometry(0.012, 12, 8), coolerMat), -kW / 2 - 0.01, 0.8, -0.1, root);
+  cube(0.006, 0.07, 0.12, heaterMat, -kW / 2 - 0.01, 0.82, -0.32, root);
+  cube(0.006, 0.07, 0.12, coolerMat, -kW / 2 - 0.01, 0.82, -0.08, root);
+  label("히터", "#ff8a65", -kW / 2 - 0.02, 0.9, -0.32, 0.12, root);
+  label("에어컨", "#4fc3f7", -kW / 2 - 0.02, 0.9, -0.08, 0.12, root);
+  const heaterLight = new THREE.PointLight(0xff7043, 0, 2.0);
+  heaterLight.position.set(-kW / 2 + 0.15, 0.6, -0.2);
+  root.add(heaterLight);
+  const coolerLight = new THREE.PointLight(0x4fc3f7, 0, 2.0);
+  coolerLight.position.set(-kW / 2 + 0.15, 0.6, -0.2);
+  root.add(coolerLight);
 
   // 조작 패널 (오른쪽 벽 앞쪽): E-STOP + 현장 버튼 3개, 클릭하면 실제 주입
   const panelX = kW / 2 + 0.012;
@@ -1527,7 +1603,8 @@ function build(m) {
   }
 
   Object.assign(v, { renderer, scene, camera, controls, cams: [camExt, camIn], frontPivot, platform, drone, props, navMats, padMat, ledMat,
-    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, heaterMat, coolerMat, estop, estopMat, buttons,
+    beaconMat, beaconLight, lampMat, outerLight, innerLight, ceilingPanel, blades, heaterMat, coolerMat, heaterLight, coolerLight,
+    pwrMat, chgMat, pwrLight, chgLight, estop, estopMat, buttons,
     cover: 0, slide: 0, clock: new THREE.Clock() });
 
   new ResizeObserver(resize).observe(box);
@@ -1682,13 +1759,26 @@ function apply(s, dt, t) {
   v.frontPivot.rotation.x = v.cover * Math.PI / 2;
   v.platform.position.z = v.slide * kSlideTravel;
   v.drone.visible = inj.drone_detected;
-  const is_nav_on = (t % 1.2) < 0.15;
+  const is_drone_on = s.regs.BMS_DSG_FET === 1 && inj.drone_detected;
+  const is_nav_on = is_drone_on && (t % 1.2) < 0.15;
   for (const nav of v.navMats) {
-    nav.emissiveIntensity = 0.3;
+    nav.emissiveIntensity = 0;
     if (is_nav_on) {
       nav.emissiveIntensity = 4;
     }
   }
+  v.pwrMat.emissiveIntensity = 0;
+  v.pwrLight.intensity = 0;
+  if (is_drone_on) {
+    v.pwrMat.emissiveIntensity = 3;
+    v.pwrLight.intensity = 0.6;
+  }
+  let chgGlow = 0;
+  if (n.chg_on && inj.drone_detected) {
+    chgGlow = 0.5 + 0.5 * Math.sin(t * 4);
+  }
+  v.chgMat.emissiveIntensity = chgGlow * 3;
+  v.chgLight.intensity = chgGlow * 0.8;
 
   let pad = 0;
   if (n.chg_on) {
@@ -1727,12 +1817,16 @@ function apply(s, dt, t) {
     v.blades.rotation.x += dt * 16;
   }
   v.heaterMat.emissiveIntensity = 0;
+  v.heaterLight.intensity = 0;
   if ((n.climate_out & 1) !== 0) {
     v.heaterMat.emissiveIntensity = 3;
+    v.heaterLight.intensity = 1.5;
   }
   v.coolerMat.emissiveIntensity = 0;
+  v.coolerLight.intensity = 0;
   if ((n.climate_out & 2) !== 0) {
     v.coolerMat.emissiveIntensity = 3;
+    v.coolerLight.intensity = 1.5;
   }
 
   v.estop.position.x = kW / 2 + 0.057;
