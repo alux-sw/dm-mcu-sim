@@ -18,6 +18,7 @@ kAssetDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 kTickSec = 0.1
 kMoveSec = 2.0   # 커버+슬라이드 기구 전체 이동 시간
 kMotionTimeoutSec = 30.0
+kClimateModeBoot = 1   # 개발용: 켜질 때 공조 auto
 kHbTimeoutSec = 3.0
 kContactTempMaxC = 60.0
 kBtnHoldSec = 0.5
@@ -140,6 +141,8 @@ class Mcu:
         self.now = 0.0
         self.holding = {addr: 0 for addr in icd.HOLDING_NAMES}
         self.inputs = [0] * icd.INPUT_COUNT
+        self.holding[icd.SET_CLIMATE_MODE] = kClimateModeBoot
+        self.inputs[icd.CLIMATE_MODE] = kClimateModeBoot
         self.last_rx = 0.0
         self.last_cmd_seq = 0
         self.safe_hold = False
