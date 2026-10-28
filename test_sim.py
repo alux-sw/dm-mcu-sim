@@ -3,9 +3,7 @@ import icd
 import mcu_sim
 import modbus_rtu as mb
 
-kTicksCover = int(mcu_sim.kCoverMoveSec / mcu_sim.kTickSec) + 2
-kTicksSlide = int(mcu_sim.kSlideMoveSec / mcu_sim.kTickSec) + 2
-kTicksMotion = kTicksCover + kTicksSlide   # 모터 하나: 커버 + 슬라이드
+kTicksMotion = int(mcu_sim.kMoveSec / mcu_sim.kTickSec) + 2   # 모터 하나: 커버+슬라이드 한 동작
 kTicksHb = int(mcu_sim.kHbTimeoutSec / mcu_sim.kTickSec) + 2
 
 
@@ -64,9 +62,9 @@ assert not mcu.inject["btn_maint"]
 cmd(mcu, 1, icd.COVER_OPEN)
 assert ack(mcu) == (1, 0, icd.OK)
 assert mcu.inputs[icd.COVER_STATE] == 1 and mcu.inputs[icd.SLIDE_STATE] == 1   # 엔코더 하나: 기구 전체가 여는 중
-ticks(mcu, kTicksCover)
-assert mcu.cover_pos >= 1.0 and mcu.slide_pos > 0.0 and mcu.inputs[icd.COVER_STATE] == 1   # 커버는 다 열렸어도 슬라이드가 나오는 동안은 여는 중
-ticks(mcu, kTicksSlide)
+ticks(mcu, kTicksMotion // 2)
+assert 0.0 < mcu.pos < 1.0 and mcu.inputs[icd.COVER_STATE] == 1 and mcu.inputs[icd.SLIDE_STATE] == 1
+ticks(mcu, kTicksMotion // 2 + 1)
 assert done(mcu) == (1, 0)
 assert mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.COVER_LIMITS] == 0b10 and mcu.inputs[icd.ACTIVE_SEQ] == 0
 assert mcu.inputs[icd.SLIDE_STATE] == 2
@@ -83,9 +81,9 @@ assert ack(mcu) == (3, 1, icd.UNKNOWN_CMD)
 
 # 커버 닫기 = 슬라이드가 다 들어온 뒤 커버 닫기까지 한 동작 → 드론 없이 충전 ON 은 통전 없음(HW_ERROR)
 cmd(mcu, 5, icd.COVER_CLOSE)
-ticks(mcu, kTicksSlide)
-assert mcu.slide_pos <= 0.0 and mcu.inputs[icd.COVER_STATE] == 3 and mcu.inputs[icd.SLIDE_STATE] == 3   # 슬라이드는 들어왔어도 커버가 닫히는 동안은 닫는 중
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion // 2)
+assert 0.0 < mcu.pos < 1.0 and mcu.inputs[icd.COVER_STATE] == 3 and mcu.inputs[icd.SLIDE_STATE] == 3
+ticks(mcu, kTicksMotion // 2 + 1)
 assert done(mcu) == (5, 0) and mcu.inputs[icd.COVER_STATE] == 0
 mcu.inject["drone_detected"] = False
 cmd(mcu, 6, icd.CHARGE_ON)
@@ -126,7 +124,7 @@ cmd(mcu, 15, icd.MOTION_STOP)
 assert done(mcu) == (15, 0) and mcu.safe_hold and mcu.active is None
 cmd(mcu, 16, icd.COVER_CLOSE)
 assert ack(mcu) == (16, 0, icd.OK) and not mcu.safe_hold
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 assert done(mcu) == (16, 0) and mcu.inputs[icd.COVER_STATE] == 0
 
 # 모션 제한 시간 초과 → DONE TIMEOUT + FAULT MOTION_TIMEOUT
@@ -151,7 +149,7 @@ assert mcu.inputs[icd.LOCAL_BTN] == 0
 
 # 현장 우선: SM 모션 중 버튼 → SM 명령은 DONE ABORTED, 버튼 동작으로 넘어감 (커버가 닫히기 시작한 뒤 = 열기 버튼)
 cmd(mcu, 190, icd.COVER_CLOSE)
-ticks(mcu, kTicksSlide + 1)
+ticks(mcu, kTicksMotion // 2)
 mcu.inject["btn_door"] = True
 ticks(mcu, 1)
 assert done(mcu) == (190, 2) and mcu.active is not None and mcu.active["seq"] == 0
@@ -210,7 +208,7 @@ assert done(mcu) == (33, 0)
 
 # SM 명령과 같은 동작의 현장 버튼(커버 여는 중 문 버튼)은 무시, SM 명령은 OK
 cmd(mcu, 34, icd.COVER_CLOSE)
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 cmd(mcu, 35, icd.COVER_OPEN)
 ticks(mcu, 3)
 mcu.inject["btn_door"] = True

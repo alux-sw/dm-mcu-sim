@@ -142,8 +142,7 @@
     <div class="station-bar">
       <h2 style="margin:0">스테이션 (측면에서 본 모습, 오른쪽이 정면)</h2>
       <span class="view-toggle"><button id="view2d" class="on">2D</button><button id="view3d">3D</button></span>
-      <span>커버 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="cover_sec"></span>
-      <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
+      <span>도어·슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="move_sec"></span>
       <span id="status_line"></span>
     </div>
     <div class="lock-bar">
@@ -350,6 +349,15 @@ function renderLocks(s) {
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
 const INJECT_PULSES = ["btn_door", "btn_maint"];
 const SLIDE_TRAVEL = 330;
+const DOOR_SHARE = 0.4;   // 그림에서 기구 위치 pos 중 도어가 도는 앞부분 (나머지는 슬라이드)
+
+function doorOf(pos) {
+  return Math.min(pos / DOOR_SHARE, 1);
+}
+
+function slideOf(pos) {
+  return Math.max((pos - DOOR_SHARE) / (1 - DOOR_SHARE), 0);
+}
 const INPUT_SECTIONS = [[0x00, "명령 피드백"], [0x10, "MCU 상태"], [0x20, "커버/슬라이드"], [0x30, "충전기"], [0x40, "환경"], [0x50, "전원"], [0x60, "출력 되읽기"], [0x80, "BMS"], [0xB0, "BMS 식별"]];
 let ICD = null;
 let simState = null;
@@ -553,13 +561,12 @@ document.addEventListener("keydown", e => {
 function renderStation(s) {
   const n = s.internal;
   const inj = s.inject;
-  const is_cover_motion = n.cover_state === "opening" || n.cover_state === "closing";
-  const is_slide_motion = n.slide_state === "extending" || n.slide_state === "retracting";
-  const angle = n.cover_pos * 90;
+  const is_motion = n.cover_state === "opening" || n.cover_state === "closing";
+  const angle = doorOf(n.pos) * 90;
   byId("door_front").style.transform = `rotate(${angle}deg)`;
-  byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
-  setClass("door_front", "moving", is_cover_motion);
-  setClass("platform_rect", "moving", is_slide_motion);
+  byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * slideOf(n.pos)}px)`;
+  setClass("door_front", "moving", is_motion);
+  setClass("platform_rect", "moving", is_motion);
   setClass("drone", "hide", !inj.drone_detected);
   const is_drone_on = s.regs.BMS_DSG_FET === 1;
   setClass("nav_l", "on", is_drone_on);
@@ -643,7 +650,7 @@ function renderStation(s) {
   }
   setText("banner", banner);
   byId("banner").setAttribute("fill", bannerColor);
-  let status = `커버 ${n.cover_state} · 슬라이드 ${n.slide_state} · LED ${LED_NAMES[n.led_pattern]}`;
+  let status = `도어·슬라이드 ${n.cover_state} · LED ${LED_NAMES[n.led_pattern]}`;
   if (n.active !== null) {
     status += ` · ${n.active.name}`;
     if (n.active.local) {
@@ -737,7 +744,7 @@ function renderSim(s) {
   }
   rows("sim_tbl", [
     ["sim time", n.time + " s"],
-    ["cover / slide", `${n.cover_pos} / ${n.slide_pos}`],
+    ["pos", n.pos],
     ["active", active],
     ["safe_hold / fault", `${n.safe_hold} / ${s.regs.FAULT_CODE}`],
     ["hb_timeout / hb_age", `${n.hb_timeout} / ${n.hb_age}s`],
@@ -1757,8 +1764,8 @@ function apply(s, dt, t) {
   const n = s.internal;
   const inj = s.inject;
   const k = Math.min(1, dt * 10);
-  v.cover += (n.cover_pos - v.cover) * k;
-  v.slide += (n.slide_pos - v.slide) * k;
+  v.cover += (doorOf(n.pos) - v.cover) * k;
+  v.slide += (slideOf(n.pos) - v.slide) * k;
   v.frontPivot.rotation.x = v.cover * Math.PI / 2;
   v.platform.position.z = v.slide * kSlideTravel;
   v.drone.visible = inj.drone_detected;
