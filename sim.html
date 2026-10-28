@@ -352,6 +352,39 @@ function renderLocks(s) {
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
 const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
 const SLIDE_TRAVEL = 330;
+const FLIGHT_MS = 1500;   // 이륙·착륙 애니메이션 길이
+const FLIGHT_RISE_PX = 160;
+let flight = null;   // {kind: "up"|"down", start}
+
+// 지금 그릴 드론 비행 모습 {rise 0~1, alpha 0~1}. 비행 중이 아니면 null
+function flightPose() {
+  if (flight === null) {
+    return null;
+  }
+  const p = Math.min((performance.now() - flight.start) / FLIGHT_MS, 1);
+  if (flight.kind === "up") {
+    if (p >= 1) {
+      flight = null;
+      return null;
+    }
+    return { rise: p, alpha: 1 - p };
+  }
+  return { rise: 1 - p, alpha: p };   // 착륙은 감지가 붙어 renderStation 이 지울 때까지 앉은 모습 유지
+}
+window.droneFlightPose = flightPose;
+
+function drawFlight2d() {
+  const pose = flightPose();
+  const drone = byId("drone");
+  drone.style.transform = "";
+  drone.style.opacity = "";
+  if (pose !== null) {
+    drone.style.transform = `translateY(${-FLIGHT_RISE_PX * pose.rise}px)`;
+    drone.style.opacity = String(pose.alpha);
+  }
+  requestAnimationFrame(drawFlight2d);
+}
+requestAnimationFrame(drawFlight2d);
 const INPUT_SECTIONS = [[0x00, "명령 피드백"], [0x10, "MCU 상태"], [0x20, "커버/슬라이드"], [0x30, "충전기"], [0x40, "환경"], [0x50, "전원"], [0x60, "출력 되읽기"], [0x80, "BMS"], [0xB0, "BMS 식별"]];
 let ICD = null;
 let simState = null;
@@ -562,7 +595,11 @@ function renderStation(s) {
   byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
   setClass("door_front", "moving", is_cover_motion);
   setClass("platform_rect", "moving", is_slide_motion);
-  setClass("drone", "hide", !inj.drone_detected);
+  const is_landed = flight !== null && flight.kind === "down" && inj.drone_detected;
+  if (is_landed) {
+    flight = null;
+  }
+  setClass("drone", "hide", !inj.drone_detected && flight === null);
   const is_drone_on = s.regs.BMS_DSG_FET === 1;
   setClass("nav_l", "on", is_drone_on);
   setClass("nav_r", "on", is_drone_on);
@@ -802,8 +839,27 @@ byId("force_list").addEventListener("click", e => {
 });
 
 // 이륙·착륙: 드론이 떠나면 착륙판 감지와 포고핀 BMS 링크가 같이 끊기고, 내려앉으면 같이 붙는다
-byId("drone_takeoff").addEventListener("click", () => postJson("/api/inject", { drone_detected: false, bms_link: false }));
-byId("drone_land").addEventListener("click", () => postJson("/api/inject", { drone_detected: true, bms_link: true }));
+// 커버가 열리고 슬라이드가 다 나와 있으면 날아오르며 사라지고 / 위에서 내려와 앉는다. 닫혀 있으면 손으로 빼고 넣은 것처럼 바로
+function isCoverOpen() {
+  return simState !== null && simState.internal.cover_state === "open" && simState.internal.slide_state === "extended";
+}
+
+byId("drone_takeoff").addEventListener("click", () => {
+  const is_flying = isCoverOpen() && simState.inject.drone_detected;
+  postJson("/api/inject", { drone_detected: false, bms_link: false });
+  if (is_flying) {
+    flight = { kind: "up", start: performance.now() };
+  }
+});
+byId("drone_land").addEventListener("click", () => {
+  const is_flying = isCoverOpen() && !simState.inject.drone_detected && flight === null;
+  if (!is_flying) {
+    postJson("/api/inject", { drone_detected: true, bms_link: true });
+    return;
+  }
+  flight = { kind: "down", start: performance.now() };
+  setTimeout(() => postJson("/api/inject", { drone_detected: true, bms_link: true }), FLIGHT_MS);
+});
 
 // 응답 조작 (예외·CRC·지연)
 byId("rc_exc_go").addEventListener("click", () => {
@@ -995,6 +1051,8 @@ const kPlinth = 0.14;
 const kSlideTravel = 1.25;
 const kDroneModelUrl = "/api/drone.glb";
 const kDroneModelLift = 0.043;   // GLB 바닥(-0.108 m)을 착륙판 위에 올리는 높이
+const kDroneY = 0.4;
+const kFlightRise = 1.6;   // 이륙·착륙 애니메이션 높이 (m)
 const kLedColors = [0x222222, 0x2e7d32, 0xffb300, 0x1e88e5, 0x00acc1, 0xef6c00, 0xd32f2f, 0x8e24aa, 0x43a047, 0xeeeeee];
 const kLedBlinkSec = [0, 0, 0.6, 0, 1.0, 0.5, 0.25, 0, 0, 0.3];
 const kLedBreathe = 8;
@@ -1453,7 +1511,7 @@ function build(m) {
 
   // 드론 (하중 센서가 감지하면 보임)
   const drone = new THREE.Group();
-  drone.position.set(0, 0.4, 0.02);
+  drone.position.set(0, kDroneY, 0.02);
   platform.add(drone);
   const shell = mat(0xd9dde2, 0.3, 0.35);
   const carbon = mat(0x1d1f23, 0.4, 0.5);
@@ -1754,6 +1812,25 @@ function renderCam(c) {
   c.renderer.render(v.scene, c.view);
 }
 
+// 드론 전체 투명도. 바뀔 때만 재질을 건드린다
+function setDroneAlpha(alpha) {
+  if (v.droneAlpha === alpha) {
+    return;
+  }
+  v.droneAlpha = alpha;
+  v.drone.traverse(o => {
+    if (o.material === undefined) {
+      return;
+    }
+    const is_transparent = alpha < 1;
+    if (o.material.transparent !== is_transparent) {
+      o.material.transparent = is_transparent;
+      o.material.needsUpdate = true;
+    }
+    o.material.opacity = alpha;
+  });
+}
+
 // 스냅샷 → 장면. 위치는 부드럽게 따라가고 빛은 패턴대로 깜빡인다
 function apply(s, dt, t) {
   const n = s.internal;
@@ -1763,7 +1840,21 @@ function apply(s, dt, t) {
   v.slide += (n.slide_pos - v.slide) * k;
   v.frontPivot.rotation.x = v.cover * Math.PI / 2;
   v.platform.position.z = v.slide * kSlideTravel;
-  v.drone.visible = inj.drone_detected;
+  const pose = window.droneFlightPose();
+  v.drone.visible = inj.drone_detected || pose !== null;
+  let rise = 0;
+  let alpha = 1;
+  if (pose !== null) {
+    rise = pose.rise;
+    alpha = pose.alpha;
+  }
+  v.drone.position.y = kDroneY + rise * kFlightRise;
+  setDroneAlpha(alpha);
+  for (const prop of v.props) {
+    if (pose !== null) {
+      prop.rotation.y += dt * 60;
+    }
+  }
   const is_drone_on = s.regs.BMS_DSG_FET === 1 && inj.drone_detected;
   const is_nav_on = is_drone_on && (t % 1.2) < 0.15;
   for (const nav of v.navMats) {
