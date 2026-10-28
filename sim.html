@@ -264,6 +264,7 @@
       <span>모션 타임아웃 초 <i class="key">motion_timeout_sec</i></span><input type="number" step="0.5" data-key="motion_timeout_sec">
 
       <div class="ig-title">충전·배터리</div>
+      <div class="ig-row"><span>드론 <i class="key">drone_detected + bms_link</i></span><span class="ig-ctl"><button id="drone_takeoff">이륙</button><button id="drone_land">착륙</button></span></div>
       <span>착륙판 드론 감지 <i class="key">drone_detected</i></span><input type="checkbox" data-key="drone_detected">
       <span>BMS 링크 <i class="key">bms_link</i></span><input type="checkbox" data-key="bms_link">
       <span>접점 온도 ℃ <i class="key">contact_temp</i></span><input type="number" step="0.5" data-key="contact_temp">
@@ -799,6 +800,10 @@ byId("force_list").addEventListener("click", e => {
     postJson("/api/force", { [chip.dataset.key]: null });
   }
 });
+
+// 이륙·착륙: 드론이 떠나면 착륙판 감지와 포고핀 BMS 링크가 같이 끊기고, 내려앉으면 같이 붙는다
+byId("drone_takeoff").addEventListener("click", () => postJson("/api/inject", { drone_detected: false, bms_link: false }));
+byId("drone_land").addEventListener("click", () => postJson("/api/inject", { drone_detected: true, bms_link: true }));
 
 // 응답 조작 (예외·CRC·지연)
 byId("rc_exc_go").addEventListener("click", () => {
