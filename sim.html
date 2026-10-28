@@ -142,8 +142,7 @@
     <div class="station-bar">
       <h2 style="margin:0">스테이션 (측면에서 본 모습, 오른쪽이 정면)</h2>
       <span class="view-toggle"><button id="view2d" class="on">2D</button><button id="view3d">3D</button></span>
-      <span>커버 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="cover_sec"></span>
-      <span>슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="slide_sec"></span>
+      <span>도어·슬라이드 이동 시간(초) <input type="number" step="0.5" min="0.1" data-key="move_sec"></span>
       <span id="status_line"></span>
     </div>
     <div class="lock-bar">
@@ -209,10 +208,8 @@
       <text x="60" y="200" text-anchor="middle" font-size="10">현장 버튼 (클릭)</text>
       <circle id="btn_door" class="pbtn" cx="45" cy="222" r="9"/>
       <text x="60" y="226" font-size="10">도어</text>
-      <circle id="btn_slide" class="pbtn" cx="45" cy="250" r="9"/>
-      <text x="60" y="254" font-size="10">슬라이드</text>
-      <circle id="btn_maint" class="pbtn" cx="45" cy="278" r="9"/>
-      <text x="60" y="282" font-size="10">정비</text>
+      <circle id="btn_maint" class="pbtn" cx="45" cy="250" r="9"/>
+      <text x="60" y="254" font-size="10">정비</text>
       <g id="cam2d_ext" class="cam2d">
         <title>외부 카메라 (클릭: 카메라 화면)</title>
         <rect class="cam-body" x="548" y="80" width="4" height="22"/>
@@ -271,7 +268,7 @@
 
       <div class="ig-title">현장 버튼 <span class="muted">(한 번 누름)</span></div>
       <div class="ig-wide">
-        <button data-key="btn_door">도어</button><button data-key="btn_slide">슬라이드</button><button data-key="btn_maint">정비</button>
+        <button data-key="btn_door">도어</button><button data-key="btn_maint">정비</button>
       </div>
 
       <div class="ig-title">드론 배터리</div>
@@ -350,8 +347,18 @@ function renderLocks(s) {
 }
 
 const LED_NAMES = ["OFF", "대기", "모션 중", "개방 대기", "드론 비행 중", "SAFE-HOLD", "FAULT", "정비 모드", "충전 중", "업데이트 중"];
-const INJECT_PULSES = ["btn_door", "btn_slide", "btn_maint"];
+const INJECT_PULSES = ["btn_door", "btn_maint"];
 const SLIDE_TRAVEL = 330;
+const DOOR_SHARE = 0.4;   // 그림에서 기구 위치 pos 중 도어가 도는 앞부분 (나머지는 슬라이드)
+
+function doorOf(pos) {
+  return Math.min(pos / DOOR_SHARE, 1);
+}
+
+function slideOf(pos) {
+  return Math.max((pos - DOOR_SHARE) / (1 - DOOR_SHARE), 0);
+}
+
 const FLIGHT_MS = 1500;   // 이륙·착륙 애니메이션 길이
 const FLIGHT_RISE_PX = 160;
 let flight = null;   // {kind: "up"|"down", start}
@@ -588,13 +595,12 @@ document.addEventListener("keydown", e => {
 function renderStation(s) {
   const n = s.internal;
   const inj = s.inject;
-  const is_cover_motion = n.active !== null && n.active.name.startsWith("COVER");
-  const is_slide_motion = n.active !== null && n.active.name.startsWith("SLIDE");
-  const angle = n.cover_pos * 90;
+  const is_motion = n.cover_state === "opening" || n.cover_state === "closing";
+  const angle = doorOf(n.pos) * 90;
   byId("door_front").style.transform = `rotate(${angle}deg)`;
-  byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * n.slide_pos}px)`;
-  setClass("door_front", "moving", is_cover_motion);
-  setClass("platform_rect", "moving", is_slide_motion);
+  byId("platform").style.transform = `translateX(${SLIDE_TRAVEL * slideOf(n.pos)}px)`;
+  setClass("door_front", "moving", is_motion);
+  setClass("platform_rect", "moving", is_motion);
   const is_landed = flight !== null && flight.kind === "down" && inj.drone_detected;
   if (is_landed) {
     flight = null;
@@ -682,7 +688,7 @@ function renderStation(s) {
   }
   setText("banner", banner);
   byId("banner").setAttribute("fill", bannerColor);
-  let status = `커버 ${n.cover_state} · 슬라이드 ${n.slide_state} · LED ${LED_NAMES[n.led_pattern]}`;
+  let status = `도어·슬라이드 ${n.cover_state} · LED ${LED_NAMES[n.led_pattern]}`;
   if (n.active !== null) {
     status += ` · ${n.active.name}`;
     if (n.active.local) {
@@ -776,7 +782,7 @@ function renderSim(s) {
   }
   rows("sim_tbl", [
     ["sim time", n.time + " s"],
-    ["cover / slide", `${n.cover_pos} / ${n.slide_pos}`],
+    ["pos", n.pos],
     ["active", active],
     ["safe_hold / fault", `${n.safe_hold} / ${s.regs.FAULT_CODE}`],
     ["hb_timeout / hb_age", `${n.hb_timeout} / ${n.hb_age}s`],
@@ -839,9 +845,9 @@ byId("force_list").addEventListener("click", e => {
 });
 
 // 이륙·착륙: 드론이 떠나면 착륙판 감지와 포고핀 BMS 링크가 같이 끊기고, 내려앉으면 같이 붙는다
-// 커버가 열리고 슬라이드가 다 나와 있으면 날아오르며 사라지고 / 위에서 내려와 앉는다. 닫혀 있으면 손으로 빼고 넣은 것처럼 바로
+// 커버가 다 열려 있으면 날아오르며 사라지고 / 위에서 내려와 앉는다. 닫혀 있으면 손으로 빼고 넣은 것처럼 바로
 function isCoverOpen() {
-  return simState !== null && simState.internal.cover_state === "open" && simState.internal.slide_state === "extended";
+  return simState !== null && simState.internal.cover_state === "open";
 }
 
 byId("drone_takeoff").addEventListener("click", () => {
@@ -1654,7 +1660,7 @@ function build(m) {
   estop.rotation.z = Math.PI / 2;
   label("E-STOP", "#ffc107", panelX, 0.955, panelZ, 0.22, root);
   const buttons = [{ mesh: estop, key: "estop", mat: estopMat }];
-  for (const [i, [key, text, color]] of [["btn_door", "도어", 0x2e7d32], ["btn_slide", "슬라이드", 0x1565c0], ["btn_maint", "정비", 0x7b1fa2]].entries()) {
+  for (const [i, [key, text, color]] of [["btn_door", "도어", 0x2e7d32], ["btn_maint", "정비", 0x7b1fa2]].entries()) {
     const y = 0.64 - i * 0.095;
     const z = panelZ - 0.09;
     const btnMat = mat(color, 0.2, 0.35, { emissive: color, emissiveIntensity: 0 });
@@ -1836,8 +1842,8 @@ function apply(s, dt, t) {
   const n = s.internal;
   const inj = s.inject;
   const k = Math.min(1, dt * 10);
-  v.cover += (n.cover_pos - v.cover) * k;
-  v.slide += (n.slide_pos - v.slide) * k;
+  v.cover += (doorOf(n.pos) - v.cover) * k;
+  v.slide += (slideOf(n.pos) - v.slide) * k;
   v.frontPivot.rotation.x = v.cover * Math.PI / 2;
   v.platform.position.z = v.slide * kSlideTravel;
   const pose = window.droneFlightPose();

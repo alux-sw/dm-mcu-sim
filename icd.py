@@ -234,8 +234,6 @@ BMS_IDENT_BLOCK = (0x00B0, 16)
 # 명령 코드
 COVER_OPEN = 0x0001
 COVER_CLOSE = 0x0002
-SLIDE_EXTEND = 0x0003
-SLIDE_RETRACT = 0x0004
 CHARGE_ON = 0x0005
 CHARGE_OFF = 0x0006
 BMS_POWER_ON = 0x0007
@@ -247,8 +245,6 @@ STATION_POWER_CYCLE = 0x000F
 CMD_NAMES = {
     COVER_OPEN: "COVER_OPEN",
     COVER_CLOSE: "COVER_CLOSE",
-    SLIDE_EXTEND: "SLIDE_EXTEND",
-    SLIDE_RETRACT: "SLIDE_RETRACT",
     CHARGE_ON: "CHARGE_ON",
     CHARGE_OFF: "CHARGE_OFF",
     BMS_POWER_ON: "BMS_POWER_ON",
@@ -258,13 +254,11 @@ CMD_NAMES = {
     STATION_POWER_CYCLE: "STATION_POWER_CYCLE",
 }
 
-MOTION_CMDS = (COVER_OPEN, COVER_CLOSE, SLIDE_EXTEND, SLIDE_RETRACT)
+MOTION_CMDS = (COVER_OPEN, COVER_CLOSE)
 BMS_CMDS = (BMS_POWER_ON, BMS_POWER_OFF)
 CMD_HI_REJECT = {
-    COVER_OPEN: (4, 6),
-    COVER_CLOSE: (1, 4, 6),
-    SLIDE_EXTEND: (2, 3, 4, 6),
-    SLIDE_RETRACT: (4, 6),
+    COVER_OPEN: (3, 4, 6),
+    COVER_CLOSE: (4, 6),
     CHARGE_ON: (5, 6),
 }
 POWER_CYCLE_MAGIC = 0xA5A5
@@ -448,10 +442,8 @@ INPUT_DESC = {
 }
 
 CMD_DESC = {
-    COVER_OPEN: "커버 열기 (출동·착륙 준비). 완료: 열림 리미트 검출. 거부: HI-4, HI-6",
-    COVER_CLOSE: "커버 닫기 (수납). 완료: 닫힘 리미트 검출. 거부: HI-1, HI-4, HI-6",
-    SLIDE_EXTEND: "슬라이드 전개 (출동·착륙 준비). 완료: 전개 리미트 검출. 거부: HI-2, HI-3, HI-4, HI-6",
-    SLIDE_RETRACT: "슬라이드 수납. 완료: 홈 리미트 검출. 거부: HI-4, HI-6",
+    COVER_OPEN: "커버 열고 슬라이드 전개 (모터 하나, 출동·착륙 준비). 완료: 열림·전개 리미트 검출. 거부: HI-3, HI-4, HI-6",
+    COVER_CLOSE: "슬라이드 수납하고 커버 닫기 (모터 하나). 완료: 홈·닫힘 리미트 검출. 거부: HI-4, HI-6",
     CHARGE_ON: "충전 시작. ARG0 전류 상한 10mA (0 = 0x0024 값). 완료: SSR ON + 통전 확인. 거부: HI-5, HI-6, CONTACT_OVERTEMP, NO_AC",
     CHARGE_OFF: "충전 중단. 완료: SSR OFF 확인. 거부 없음",
     BMS_POWER_ON: "드론 전원 켜기 (BMS 출력 스위치 ON). PWR_CTRL ← 0x01, ERROR_CODE = OK. 거부: BMS_NO_LINK",

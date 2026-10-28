@@ -3,8 +3,7 @@ import icd
 import mcu_sim
 import modbus_rtu as mb
 
-kTicksCover = int(mcu_sim.kCoverMoveSec / mcu_sim.kTickSec) + 2
-kTicksSlide = int(mcu_sim.kSlideMoveSec / mcu_sim.kTickSec) + 2
+kTicksMotion = int(mcu_sim.kMoveSec / mcu_sim.kTickSec) + 2   # 모터 하나: 커버+슬라이드 한 동작
 kTicksHb = int(mcu_sim.kHbTimeoutSec / mcu_sim.kTickSec) + 2
 
 
@@ -59,49 +58,50 @@ assert (mcu.inputs[icd.MAINT_ACTIVE], mcu.inputs[icd.MAINT_SOURCE]) == (0, 0)
 ticks(mcu, 6)
 assert not mcu.inject["btn_maint"]
 
-# 커버 열기 → 완료 (인자 없음)
+# 커버 열기 = 커버가 다 열린 뒤 슬라이드 전개까지 한 동작 (인자 없음)
 cmd(mcu, 1, icd.COVER_OPEN)
 assert ack(mcu) == (1, 0, icd.OK)
-assert mcu.inputs[icd.COVER_STATE] == 1
-ticks(mcu, kTicksCover)
+assert mcu.inputs[icd.COVER_STATE] == 1 and mcu.inputs[icd.SLIDE_STATE] == 1   # 엔코더 하나: 기구 전체가 여는 중
+ticks(mcu, kTicksMotion // 2)
+assert 0.0 < mcu.pos < 1.0 and mcu.inputs[icd.COVER_STATE] == 1 and mcu.inputs[icd.SLIDE_STATE] == 1
+ticks(mcu, kTicksMotion // 2 + 1)
 assert done(mcu) == (1, 0)
 assert mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.COVER_LIMITS] == 0b10 and mcu.inputs[icd.ACTIVE_SEQ] == 0
+assert mcu.inputs[icd.SLIDE_STATE] == 2
 
 # 같은 seq 재전송은 무시
 cmd(mcu, 1, icd.COVER_CLOSE)
 assert ack(mcu) == (1, 0, icd.OK) and mcu.active is None
 
-# 슬라이드 전개 → 완료, 그 상태에서 커버 닫기는 HI-1, 충전은 HI-5
-cmd(mcu, 2, icd.SLIDE_EXTEND)
-assert ack(mcu) == (2, 0, icd.OK)
-ticks(mcu, kTicksSlide)
-assert done(mcu) == (2, 0) and mcu.inputs[icd.SLIDE_STATE] == 2
-cmd(mcu, 3, icd.COVER_CLOSE)
-assert ack(mcu) == (3, 1, icd.HI1)
-cmd(mcu, 4, icd.CHARGE_ON)
-assert ack(mcu) == (4, 1, icd.HI5)
+# 슬라이드 나와 있으면 충전은 HI-5, 슬라이드 명령 코드는 없음
+cmd(mcu, 2, icd.CHARGE_ON)
+assert ack(mcu) == (2, 1, icd.HI5)
+cmd(mcu, 3, 0x0003)
+assert ack(mcu) == (3, 1, icd.UNKNOWN_CMD)
 
-# 슬라이드 수납 → 드론 없이 충전 ON 은 통전 없음(HW_ERROR)
-cmd(mcu, 5, icd.SLIDE_RETRACT)
-ticks(mcu, kTicksSlide)
-assert done(mcu) == (5, 0)
+# 커버 닫기 = 슬라이드가 다 들어온 뒤 커버 닫기까지 한 동작 → 드론 없이 충전 ON 은 통전 없음(HW_ERROR)
+cmd(mcu, 5, icd.COVER_CLOSE)
+ticks(mcu, kTicksMotion // 2)
+assert 0.0 < mcu.pos < 1.0 and mcu.inputs[icd.COVER_STATE] == 3 and mcu.inputs[icd.SLIDE_STATE] == 3
+ticks(mcu, kTicksMotion // 2 + 1)
+assert done(mcu) == (5, 0) and mcu.inputs[icd.COVER_STATE] == 0
 mcu.inject["drone_detected"] = False
 cmd(mcu, 6, icd.CHARGE_ON)
 assert ack(mcu) == (6, 0, icd.OK) and done(mcu) == (6, 3) and mcu.inputs[icd.CHG_STATE] == 2
 
-# 드론 감지(하중 센서) 후 충전 ON → 충전 중 슬라이드 전개는 HI-3
+# 드론 감지(하중 센서) 후 충전 ON → 충전 중 커버 열기(슬라이드 전개 포함)는 HI-3
 mcu.inject["drone_detected"] = True
 ticks(mcu, 1)
 assert mcu.inputs[icd.SLIDE_LIMITS] & 0b100
 cmd(mcu, 7, icd.CHARGE_ON, 300)
 assert done(mcu) == (7, 0) and mcu.inputs[icd.CHG_STATE] == 1 and mcu.inputs[icd.CHG_CURRENT_LIMIT] == 300
-cmd(mcu, 8, icd.SLIDE_EXTEND)
+cmd(mcu, 8, icd.COVER_OPEN)
 assert ack(mcu) == (8, 1, icd.HI3)
 cmd(mcu, 9, icd.CHARGE_OFF)
 assert done(mcu) == (9, 0) and mcu.inputs[icd.CHG_STATE] == 0
 
 # 모션 중 E-Stop → FAULT(HI-6)+SAFE-HOLD, DONE INTERLOCK
-cmd(mcu, 10, icd.COVER_CLOSE)
+cmd(mcu, 10, icd.COVER_OPEN)
 ticks(mcu, 5)
 mcu.inject["estop"] = True
 ticks(mcu, 1)
@@ -124,7 +124,7 @@ cmd(mcu, 15, icd.MOTION_STOP)
 assert done(mcu) == (15, 0) and mcu.safe_hold and mcu.active is None
 cmd(mcu, 16, icd.COVER_CLOSE)
 assert ack(mcu) == (16, 0, icd.OK) and not mcu.safe_hold
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 assert done(mcu) == (16, 0) and mcu.inputs[icd.COVER_STATE] == 0
 
 # 모션 제한 시간 초과 → DONE TIMEOUT + FAULT MOTION_TIMEOUT
@@ -141,25 +141,19 @@ mcu.inject["btn_door"] = True
 ticks(mcu, 1)
 assert mcu.inputs[icd.LOCAL_BTN] == 0b01 and mcu.active is not None and mcu.active["seq"] == 0
 assert mcu.inputs[icd.ACTIVE_SEQ] == 0 and mcu.inputs[icd.MCU_STATUS] & (1 << 7)
-cmd(mcu, 19, icd.SLIDE_EXTEND)
+cmd(mcu, 19, icd.COVER_CLOSE)
 assert ack(mcu) == (19, 1, icd.BUSY)
-ticks(mcu, kTicksCover)
-assert mcu.active is None and mcu.inputs[icd.COVER_STATE] == 2 and done(mcu) == (18, 0)
+ticks(mcu, kTicksMotion)
+assert mcu.active is None and mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.SLIDE_STATE] == 2 and done(mcu) == (18, 0)
 assert mcu.inputs[icd.LOCAL_BTN] == 0
-mcu.inject["btn_slide"] = True
-ticks(mcu, kTicksSlide + 1)
-assert mcu.inputs[icd.SLIDE_STATE] == 2
-mcu.inject["btn_slide"] = True
-ticks(mcu, kTicksSlide + 1)
-assert mcu.inputs[icd.SLIDE_STATE] == 0
 
-# 현장 우선: SM 모션 중 버튼 → SM 명령은 DONE ABORTED, 버튼 동작으로 넘어감
+# 현장 우선: SM 모션 중 버튼 → SM 명령은 DONE ABORTED, 버튼 동작으로 넘어감 (커버가 닫히기 시작한 뒤 = 열기 버튼)
 cmd(mcu, 190, icd.COVER_CLOSE)
-ticks(mcu, 3)
+ticks(mcu, kTicksMotion // 2)
 mcu.inject["btn_door"] = True
 ticks(mcu, 1)
 assert done(mcu) == (190, 2) and mcu.active is not None and mcu.active["seq"] == 0
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 assert mcu.inputs[icd.COVER_STATE] == 2
 
 # BMS 전원, 링크 끊김
@@ -198,38 +192,29 @@ assert mcu.inputs[icd.LIGHT_STATE] == 3
 mcu.set_state({"SET_LED_PATTERN": 2})
 assert mcu.inputs[icd.LED_PATTERN] == 2
 
-# DONE 을 받자마자 다음 명령: 커버 열림 DONE 틱의 HARD_BLOCK 은 이미 열림 기준 (HI-2 없음)
-cmd(mcu, 30, icd.COVER_CLOSE)
-ticks(mcu, kTicksCover)
-cmd(mcu, 31, icd.COVER_OPEN)
-for _ in range(kTicksCover):
+# DONE 을 받자마자 다음 명령: 커버 닫힘 DONE 틱의 HARD_BLOCK 은 이미 수납 기준 (HI-5 없음)
+cmd(mcu, 30, icd.COVER_OPEN)
+ticks(mcu, kTicksMotion)
+cmd(mcu, 31, icd.COVER_CLOSE)
+for _ in range(kTicksMotion):
     ticks(mcu, 1)
     if done(mcu) == (31, 0):
         break
 assert done(mcu) == (31, 0)
-mcu.handle(mb.req_write_multi(icd.CMD_SEQ, [32, icd.SLIDE_EXTEND, 0, 0]))
+mcu.handle(mb.req_write_multi(icd.CMD_SEQ, [32, icd.CHARGE_ON, 0, 0]))
 assert ack(mcu) == (32, 0, icd.OK)
-ticks(mcu, kTicksSlide)
-assert done(mcu) == (32, 0)
-
-# 할 수 없는 현장 버튼(슬라이드 나와 있어 커버 닫기 HI-1)은 SM 명령을 끊지 않음
-cmd(mcu, 33, icd.SLIDE_RETRACT)
-ticks(mcu, 3)
-mcu.inject["btn_door"] = True
-ticks(mcu, 1)
-assert mcu.active is not None and mcu.active["seq"] == 33
-ticks(mcu, kTicksSlide)
+cmd(mcu, 33, icd.CHARGE_OFF)
 assert done(mcu) == (33, 0)
 
 # SM 명령과 같은 동작의 현장 버튼(커버 여는 중 문 버튼)은 무시, SM 명령은 OK
 cmd(mcu, 34, icd.COVER_CLOSE)
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 cmd(mcu, 35, icd.COVER_OPEN)
 ticks(mcu, 3)
 mcu.inject["btn_door"] = True
 ticks(mcu, 1)
 assert mcu.active is not None and mcu.active["seq"] == 35
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 assert done(mcu) == (35, 0) and mcu.inputs[icd.COVER_STATE] == 2
 
 # 착륙판 감지(주입 drone_detected)가 하중 리미트·MCU_STATUS 비트로

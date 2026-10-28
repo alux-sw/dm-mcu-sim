@@ -16,8 +16,7 @@ kGuiFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sim.html")
 kDroneModelFile = os.path.join(os.path.dirname(os.path.abspath(__file__)), "drone.glb")
 kAssetDir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
 kTickSec = 0.1
-kCoverMoveSec = 3.0
-kSlideMoveSec = 4.0
+kMoveSec = 2.0   # 커버+슬라이드 기구 전체 이동 시간
 kMotionTimeoutSec = 30.0
 kClimateModeBoot = 1   # 개발용: 켜질 때 공조 auto
 kHbTimeoutSec = 3.0
@@ -67,9 +66,9 @@ kReadback = {
     icd.SET_ALARM_OUT: icd.ALARM_OUT_STATE,
     icd.SET_LED_PATTERN: icd.LED_PATTERN,
 }
-kButtons = ("btn_door", "btn_slide", "btn_maint")
+kButtons = ("btn_door", "btn_maint")
 # 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
-kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
+kSettable = {"fault_code": int, "safe_hold": bool, "pos": float, "chg_on": bool,
              "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
              "bms_rsoc": float, "bms_cell_mv": int, "bms_temp_c": float,
              "bms_cycle_count": int, "bms_charging_current_ma": int,
@@ -79,9 +78,9 @@ kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_po
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "drone_detected": True, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
-    "btn_door": False, "btn_slide": False, "btn_maint": False,
+    "btn_door": False, "btn_maint": False,
     "contact_temp": 25.0, "temp_in": 25.0, "hum_in": 45.0,
-    "cover_sec": kCoverMoveSec, "slide_sec": kSlideMoveSec, "motion_timeout_sec": kMotionTimeoutSec,
+    "move_sec": kMoveSec, "motion_timeout_sec": kMotionTimeoutSec,
     "exc_code": 0, "exc_n": 0,          # 다음 n 회 응답을 예외로 (2 주소, 3 값, 4 장치오류)
     "bad_crc_n": 0,                     # 다음 n 회 응답의 CRC 를 깨서 보냅니다
     "resp_delay_ms": 0,                 # 응답을 이만큼 늦춥니다 (ICD 응답 대기 100ms)
@@ -151,8 +150,7 @@ class Mcu:
         self.fault_code = 0
         self.hard_block = 0
         self.active = None
-        self.cover_pos = 0.0
-        self.slide_pos = 0.0
+        self.pos = 0.0   # 기구 위치 0 = 닫힘·수납, 1 = 열림·전개
         self.chg_on = False
         self.chg_fault = 0
         self.chg_limit_arg = 0
@@ -304,7 +302,7 @@ class Mcu:
         if code == icd.STATION_POWER_CYCLE:
             if a0 != icd.POWER_CYCLE_MAGIC:
                 return icd.BAD_ARG
-            is_unsafe = is_busy or self.chg_on or self.cover_pos > 0.0
+            is_unsafe = is_busy or self.chg_on or self.pos > 0.0
             if is_unsafe:
                 return icd.BUSY
         return icd.OK
@@ -429,12 +427,8 @@ class Mcu:
             self.set_maint(1 - self.maint_active, 2)
             return
         code = icd.COVER_OPEN
-        if key == "btn_door" and self.cover_pos >= 1.0:
+        if self.pos >= 1.0:
             code = icd.COVER_CLOSE
-        if key == "btn_slide":
-            code = icd.SLIDE_EXTEND
-            if self.slide_pos >= 1.0:
-                code = icd.SLIDE_RETRACT
         is_remote_motion = self.active is not None and self.active["seq"] != 0
         if is_remote_motion:
             is_same = self.active["code"] == code
@@ -498,12 +492,12 @@ class Mcu:
             self.enter_safe_hold("heartbeat timeout")
 
     def tick_interlocks(self):
-        is_slide_home = self.slide_pos <= 0.0
-        is_cover_open = self.cover_pos >= 1.0
+        is_closed = self.pos <= 0.0
+        is_open = self.pos >= 1.0
         block = 0
-        if not is_slide_home:
+        if not is_closed:
             block |= (1 << 0) | (1 << 4)
-        if not is_cover_open:
+        if not is_open:
             block |= (1 << 1)
         if self.chg_on:
             block |= (1 << 2)
@@ -524,16 +518,11 @@ class Mcu:
         a = self.active
         if a is None:
             return
-        code = a["code"]
         target = 0.0
-        if code in (icd.COVER_OPEN, icd.SLIDE_EXTEND):
+        if a["code"] == icd.COVER_OPEN:
             target = 1.0
-        if code in (icd.COVER_OPEN, icd.COVER_CLOSE):
-            self.cover_pos = approach(self.cover_pos, target, kTickSec / max(self.inject["cover_sec"], kTickSec))
-            pos = self.cover_pos
-        else:
-            self.slide_pos = approach(self.slide_pos, target, kTickSec / max(self.inject["slide_sec"], kTickSec))
-            pos = self.slide_pos
+        self.pos = approach(self.pos, target, kTickSec / max(self.inject["move_sec"], kTickSec))
+        pos = self.pos
         is_local = a["seq"] == 0
         if not is_local:
             self.inputs[icd.PROGRESS_PCT] = int(abs(pos - (1.0 - target)) * 100)
@@ -606,8 +595,6 @@ class Mcu:
         local_btn = 0
         if inj["btn_door"]:
             local_btn |= 1 << 0
-        if inj["btn_slide"]:
-            local_btn |= 1 << 1
         inp[icd.LOCAL_BTN] = local_btn
         self.fill_cover_slide(is_motion)
         self.fill_charger()
@@ -638,54 +625,39 @@ class Mcu:
         self.fill_bms()
 
     def fill_cover_slide(self, is_motion):
+        """엔코더 하나: 커버+슬라이드 기구 전체 위치만 안다. 다 닫힘(슬라이드 수납까지)·다 열림(슬라이드 전개까지)·여는 중·닫는 중. SLIDE_* 는 같은 값"""
         inp = self.inputs
-        is_closed = self.cover_pos <= 0.0
-        is_open = self.cover_pos >= 1.0
-        is_cover_motion = is_motion and self.active["code"] in (icd.COVER_OPEN, icd.COVER_CLOSE)
+        is_closed = self.pos <= 0.0
+        is_open = self.pos >= 1.0
         state = 4
-        if is_cover_motion and self.active["code"] == icd.COVER_OPEN:
+        if is_motion and self.active["code"] == icd.COVER_OPEN:
             state = 1
-        elif is_cover_motion:
+        elif is_motion:
             state = 3
         elif is_closed:
             state = 0
         elif is_open:
             state = 2
         inp[icd.COVER_STATE] = state
+        inp[icd.SLIDE_STATE] = state
         limits = 0
         if is_closed:
             limits |= 1 << 0
         if is_open:
             limits |= 1 << 1
+        slide_limits = limits
+        if self.inject["drone_detected"]:
+            slide_limits |= 1 << 2
         if self.inject["limit_conflict"]:
             limits = (1 << 0) | (1 << 1)
         inp[icd.COVER_LIMITS] = limits
-        inp[icd.COVER_CURRENT] = 0
-        if is_cover_motion:
-            inp[icd.COVER_CURRENT] = kMotionCurrentmA
-        is_slide_motion = is_motion and not is_cover_motion
-        state = 4
-        if is_slide_motion and self.active["code"] == icd.SLIDE_EXTEND:
-            state = 1
-        elif is_slide_motion:
-            state = 3
-        elif self.slide_pos <= 0.0:
-            state = 0
-        elif self.slide_pos >= 1.0:
-            state = 2
-        inp[icd.SLIDE_STATE] = state
-        limits = 0
-        if self.slide_pos <= 0.0:
-            limits |= 1 << 0
-        if self.slide_pos >= 1.0:
-            limits |= 1 << 1
-        if self.inject["drone_detected"]:
-            limits |= 1 << 2
-        inp[icd.SLIDE_LIMITS] = limits
-        inp[icd.SLIDE_CURRENT] = 0
-        if is_slide_motion:
-            inp[icd.SLIDE_CURRENT] = kMotionCurrentmA
-        inp[icd.SLIDE_ENCODER] = int(self.slide_pos * 1000)
+        inp[icd.SLIDE_LIMITS] = slide_limits
+        current = 0
+        if is_motion:
+            current = kMotionCurrentmA
+        inp[icd.COVER_CURRENT] = current
+        inp[icd.SLIDE_CURRENT] = current
+        inp[icd.SLIDE_ENCODER] = int(self.pos * 1000)   # 하나뿐인 엔코더 = 기구 전체 진행
 
     def fill_charger(self):
         inp = self.inputs
@@ -821,8 +793,7 @@ class Mcu:
                 "force": {icd.INPUT_NAMES.get(a, hex(a)): v for a, v in self.force.items()},
                 "internal": {
                     "time": round(self.now, 1),
-                    "cover_pos": round(self.cover_pos, 2),
-                    "slide_pos": round(self.slide_pos, 2),
+                    "pos": round(self.pos, 2),
                     "active": active,
                     "safe_hold": self.safe_hold,
                     "fault": icd.REASON_NAMES.get(self.fault_code, hex(self.fault_code)),
