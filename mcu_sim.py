@@ -635,54 +635,39 @@ class Mcu:
         self.fill_bms()
 
     def fill_cover_slide(self, is_motion):
+        """엔코더 하나: 커버+슬라이드 기구 전체 위치만 안다. 다 닫힘(슬라이드 수납까지)·다 열림(슬라이드 전개까지)·여는 중·닫는 중. SLIDE_* 는 같은 값"""
         inp = self.inputs
-        is_closed = self.cover_pos <= 0.0
-        is_open = self.cover_pos >= 1.0
-        is_cover_motion = is_motion and self.is_cover_turn(self.active["code"])
+        is_closed = self.cover_pos <= 0.0 and self.slide_pos <= 0.0
+        is_open = self.cover_pos >= 1.0 and self.slide_pos >= 1.0
         state = 4
-        if is_cover_motion and self.active["code"] == icd.COVER_OPEN:
+        if is_motion and self.active["code"] == icd.COVER_OPEN:
             state = 1
-        elif is_cover_motion:
+        elif is_motion:
             state = 3
         elif is_closed:
             state = 0
         elif is_open:
             state = 2
         inp[icd.COVER_STATE] = state
+        inp[icd.SLIDE_STATE] = state
         limits = 0
         if is_closed:
             limits |= 1 << 0
         if is_open:
             limits |= 1 << 1
+        slide_limits = limits
+        if self.inject["drone_detected"]:
+            slide_limits |= 1 << 2
         if self.inject["limit_conflict"]:
             limits = (1 << 0) | (1 << 1)
         inp[icd.COVER_LIMITS] = limits
-        inp[icd.COVER_CURRENT] = 0
-        if is_cover_motion:
-            inp[icd.COVER_CURRENT] = kMotionCurrentmA
-        is_slide_motion = is_motion and not is_cover_motion
-        state = 4
-        if is_slide_motion and self.active["code"] == icd.COVER_OPEN:
-            state = 1
-        elif is_slide_motion:
-            state = 3
-        elif self.slide_pos <= 0.0:
-            state = 0
-        elif self.slide_pos >= 1.0:
-            state = 2
-        inp[icd.SLIDE_STATE] = state
-        limits = 0
-        if self.slide_pos <= 0.0:
-            limits |= 1 << 0
-        if self.slide_pos >= 1.0:
-            limits |= 1 << 1
-        if self.inject["drone_detected"]:
-            limits |= 1 << 2
-        inp[icd.SLIDE_LIMITS] = limits
-        inp[icd.SLIDE_CURRENT] = 0
-        if is_slide_motion:
-            inp[icd.SLIDE_CURRENT] = kMotionCurrentmA
-        inp[icd.SLIDE_ENCODER] = int(self.slide_pos * 1000)
+        inp[icd.SLIDE_LIMITS] = slide_limits
+        current = 0
+        if is_motion:
+            current = kMotionCurrentmA
+        inp[icd.COVER_CURRENT] = current
+        inp[icd.SLIDE_CURRENT] = current
+        inp[icd.SLIDE_ENCODER] = int((self.cover_pos + self.slide_pos) / 2 * 1000)   # 하나뿐인 엔코더 = 기구 전체 진행
 
     def fill_charger(self):
         inp = self.inputs

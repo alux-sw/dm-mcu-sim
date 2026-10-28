@@ -63,9 +63,9 @@ assert not mcu.inject["btn_maint"]
 # 커버 열기 = 커버가 다 열린 뒤 슬라이드 전개까지 한 동작 (인자 없음)
 cmd(mcu, 1, icd.COVER_OPEN)
 assert ack(mcu) == (1, 0, icd.OK)
-assert mcu.inputs[icd.COVER_STATE] == 1 and mcu.inputs[icd.SLIDE_STATE] == 0
+assert mcu.inputs[icd.COVER_STATE] == 1 and mcu.inputs[icd.SLIDE_STATE] == 1   # 엔코더 하나: 기구 전체가 여는 중
 ticks(mcu, kTicksCover)
-assert mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.SLIDE_STATE] == 1 and mcu.active is not None
+assert mcu.cover_pos >= 1.0 and mcu.slide_pos > 0.0 and mcu.inputs[icd.COVER_STATE] == 1   # 커버는 다 열렸어도 슬라이드가 나오는 동안은 여는 중
 ticks(mcu, kTicksSlide)
 assert done(mcu) == (1, 0)
 assert mcu.inputs[icd.COVER_STATE] == 2 and mcu.inputs[icd.COVER_LIMITS] == 0b10 and mcu.inputs[icd.ACTIVE_SEQ] == 0
@@ -84,7 +84,7 @@ assert ack(mcu) == (3, 1, icd.UNKNOWN_CMD)
 # 커버 닫기 = 슬라이드가 다 들어온 뒤 커버 닫기까지 한 동작 → 드론 없이 충전 ON 은 통전 없음(HW_ERROR)
 cmd(mcu, 5, icd.COVER_CLOSE)
 ticks(mcu, kTicksSlide)
-assert mcu.inputs[icd.SLIDE_STATE] == 0 and mcu.inputs[icd.COVER_STATE] == 3
+assert mcu.slide_pos <= 0.0 and mcu.inputs[icd.COVER_STATE] == 3 and mcu.inputs[icd.SLIDE_STATE] == 3   # 슬라이드는 들어왔어도 커버가 닫히는 동안은 닫는 중
 ticks(mcu, kTicksCover)
 assert done(mcu) == (5, 0) and mcu.inputs[icd.COVER_STATE] == 0
 mcu.inject["drone_detected"] = False
@@ -155,7 +155,7 @@ ticks(mcu, kTicksSlide + 1)
 mcu.inject["btn_door"] = True
 ticks(mcu, 1)
 assert done(mcu) == (190, 2) and mcu.active is not None and mcu.active["seq"] == 0
-ticks(mcu, kTicksCover)
+ticks(mcu, kTicksMotion)
 assert mcu.inputs[icd.COVER_STATE] == 2
 
 # BMS 전원, 링크 끊김
