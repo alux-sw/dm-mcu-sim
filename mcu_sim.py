@@ -67,7 +67,6 @@ kReadback = {
     icd.SET_LED_PATTERN: icd.LED_PATTERN,
 }
 kButtons = ("btn_door", "btn_slide", "btn_maint")
-kDroneLocations = ("docked", "airborne")   # 드론 mock 위치. docked 면 착륙판 하중(drone_detected)도 켜짐
 # 화면에서 직접 바꿀 수 있는 MCU 내부 상태 (이름 → 형). 입력 레지스터는 이 값들로 계산된다
 kSettable = {"fault_code": int, "safe_hold": bool, "cover_pos": float, "slide_pos": float, "chg_on": bool,
              "chg_fault": int, "bms_pwr": int, "maint_active": int, "maint_source": int,
@@ -177,7 +176,6 @@ class Mcu:
         self.maint_active = 0
         self.maint_source = 0
         self.btn_release_at = {}
-        self.drone = {"link": True, "location": "docked", "stowed_report": True}   # 드론 링크 mock (SM 이 /api/drone 으로 읽음)
         self.timers = []
         self.note("MCU boot")
 
@@ -844,7 +842,6 @@ class Mcu:
                     "maint_active": self.maint_active,
                     "maint_source": icd.MAINT_SOURCE_NAMES[self.maint_source],
                 },
-                "drone": dict(self.drone),
                 "holding": {icd.HOLDING_NAMES[a]: v for a, v in self.holding.items()},
                 "settable": {k: getattr(self, k) for k in kSettable},
                 "bms_cells": [{"mv": mv, "pct": pct_of_cell_mv(mv)} for mv in self.inputs[icd.BMS_CELL1:icd.BMS_CELL1 + kBmsCells]],
@@ -896,25 +893,6 @@ class Mcu:
                 if key in self.inject:
                     self.inject[key] = type(kInjectDefaults[key])(value)
                     self.note("inject %s=%s" % (key, self.inject[key]))
-        return self.snapshot()
-
-    def drone_state(self):
-        with self.lock:
-            return dict(self.drone)
-
-    def set_drone(self, body):
-        """본문 예: {"location": "airborne"}, {"link": false}, {"stowed_report": false}. 위치를 바꾸면 착륙판 하중·수납 보고도 따라감"""
-        with self.lock:
-            if "link" in body:
-                self.drone["link"] = bool(body["link"])
-            if body.get("location") in kDroneLocations:
-                is_docked = body["location"] == "docked"
-                self.drone["location"] = body["location"]
-                self.drone["stowed_report"] = is_docked
-                self.inject["drone_detected"] = is_docked
-            if "stowed_report" in body:
-                self.drone["stowed_report"] = bool(body["stowed_report"])
-            self.note("drone %s" % self.drone)
         return self.snapshot()
 
     def output_cells(self):
@@ -1003,8 +981,6 @@ def main():
         ("POST", "/api/inject"): mcu.set_inject,
         ("POST", "/api/force"): mcu.set_force,
         ("POST", "/api/set"): mcu.set_state,
-        ("GET", "/api/drone"): lambda body: mcu.drone_state(),
-        ("POST", "/api/drone"): mcu.set_drone,
         ("GET", "/api/icd"): lambda body: icd.describe(),
     }, html_path=kGuiFile, streams={"/api/cam.mjpg": camstream.mjpeg, "/api/drone.glb": drone_model}, asset_dir=kAssetDir)
     print("mcu_sim: %s, http :%d" % (port, kHttpPort), flush=True)

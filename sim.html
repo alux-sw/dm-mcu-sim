@@ -254,10 +254,7 @@
         <button data-key="btn_door">도어</button><button data-key="btn_slide">슬라이드</button><button data-key="btn_maint">정비</button>
       </div>
 
-      <div class="ig-title">드론 mock <span id="drone_text" class="muted"></span></div>
-      <span>링크</span><input type="checkbox" id="drone_link">
-      <span>수납 보고</span><input type="checkbox" id="drone_stowed">
-      <div class="ig-row"><span>위치</span><span class="ig-ctl"><button id="drone_takeoff">이륙</button><button id="drone_land">착륙</button></span></div>
+      <div class="ig-title">드론 배터리</div>
       <div class="ig-row"><span>배터리 잔량 <i class="key">bms_rsoc·bms_cell_mv</i></span>
       <span class="ig-ctl"><input type="range" id="bms_rsoc" min="0" max="100" step="1"><span id="bms_rsoc_text"></span></span></div>
       <details class="ig-cells"><summary>셀별 잔량 <i class="key">bms_cell_pct</i> <span id="cells_text" class="muted"></span></summary>
@@ -682,9 +679,6 @@ function renderSim(s) {
   const inj = s.inject;
   const n = s.internal;
   refreshInject(document, inj);
-  byId("drone_link").checked = s.drone.link;
-  byId("drone_stowed").checked = s.drone.stowed_report;
-  setText("drone_text", `위치 ${s.drone.location}`);
   const rsoc = byId("bms_rsoc");
   if (!rsoc.matches(":active")) {   // 끌고 있는 동안 200 ms 갱신이 손잡이를 되돌리지 않게
     rsoc.value = Math.floor(s.settable.bms_rsoc);
@@ -872,10 +866,6 @@ byId("cam_panes").addEventListener("keydown", e => {
 
 bindInject(document.querySelector(".station-bar"));
 bindInject(byId("inject"));
-byId("drone_link").addEventListener("change", e => postJson("/api/drone", { link: e.target.checked }));
-byId("drone_stowed").addEventListener("change", e => postJson("/api/drone", { stowed_report: e.target.checked }));
-byId("drone_takeoff").addEventListener("click", () => postJson("/api/drone", { location: "airborne" }));
-byId("drone_land").addEventListener("click", () => postJson("/api/drone", { location: "docked" }));
 byId("bms_rsoc").addEventListener("input", e => postJson("/api/set", { bms_rsoc: Number(e.target.value) }));
 byId("cells_list").addEventListener("input", e => {
   postJson("/api/set", { bms_cell_pct: { cell: Number(e.target.dataset.cell), pct: Number(e.target.value) } });

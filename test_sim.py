@@ -232,16 +232,13 @@ assert mcu.active is not None and mcu.active["seq"] == 35
 ticks(mcu, kTicksCover)
 assert done(mcu) == (35, 0) and mcu.inputs[icd.COVER_STATE] == 2
 
-# 드론 mock: 이륙하면 착륙판 하중·수납 보고가 꺼지고, 착륙하면 켜짐
-mcu.set_drone({"location": "airborne"})
+# 착륙판 감지(주입 drone_detected)가 하중 리미트·MCU_STATUS 비트로
+mcu.inject["drone_detected"] = False
 ticks(mcu, 1)
-assert mcu.drone == {"link": True, "location": "airborne", "stowed_report": False}
 assert not mcu.inputs[icd.SLIDE_LIMITS] & 0b100 and not mcu.inputs[icd.MCU_STATUS] & (1 << 6)
-mcu.set_drone({"location": "docked"})
+mcu.inject["drone_detected"] = True
 ticks(mcu, 1)
-assert mcu.drone["stowed_report"] and mcu.inputs[icd.SLIDE_LIMITS] & 0b100
-mcu.set_drone({"link": False, "stowed_report": False})
-assert mcu.drone == {"link": False, "location": "docked", "stowed_report": False}
+assert mcu.inputs[icd.SLIDE_LIMITS] & 0b100 and mcu.inputs[icd.MCU_STATUS] & (1 << 6)
 
 
 def bms32(m, addr_hi):
