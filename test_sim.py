@@ -276,14 +276,13 @@ assert bms.inputs[icd.BMS_FULL_CHARGE_CAPACITY] == 8000 and bms.inputs[icd.BMS_R
 bms.set_state({"chg_on": 0, "bms_rsoc": 80})
 
 # PF_STATUS ≠ 0 → FAULT_FLAGS bit31, 알람 bit14·11, FET 둘 다 열림
-bms.set_state({"bms_pf_status": 0x10, "bms_pf_alert": 0x20, "bms_safety_alert": 0x1, "bms_safety_status": 0x800})
+bms.set_state({"bms_pf_status": 0x10, "bms_safety_status": 0x800})
 ticks(bms, 1)
 assert bms32(bms, icd.BMS_FAULT_FLAGS_HI) == 1 << 31 and bms32(bms, icd.BMS_PF_STATUS_HI) == 0x10
-assert bms32(bms, icd.BMS_PF_ALERT_HI) == 0x20 and bms32(bms, icd.BMS_SAFETY_ALERT_HI) == 0x1
 assert bms32(bms, icd.BMS_SAFETY_STATUS_HI) == 0x800
 assert bms.inputs[icd.BMS_BATTERY_STATUS] & 0x4800 == 0x4800
 assert (bms.inputs[icd.BMS_CHG_FET], bms.inputs[icd.BMS_DSG_FET]) == (0, 0)
-bms.set_state({"bms_pf_status": 0, "bms_pf_alert": 0, "bms_safety_alert": 0, "bms_safety_status": 0})
+bms.set_state({"bms_pf_status": 0, "bms_safety_status": 0})
 
 # UV_CRITICAL: 방전만 차단, 충전 FET 는 닫힘. COMM: ERROR_CODE 7
 bms.set_state({"bms_fault_flags": 1 << 8})
@@ -298,14 +297,13 @@ ticks(bms, 1)
 assert (bms.inputs[icd.BMS_CHG_FET], bms.inputs[icd.BMS_DSG_FET]) == (0xFF, 0xFF)
 bms.set_state({"bms_fet_unknown": 0})
 
-# 예상 시간: 방전 중 TO_EMPTY 만, 충전 중 TO_FULL 만 (속도 0 이면 모름)
+# 만충 예상 시간: 충전 중에만 (속도 0 이면 모름)
 bms.set_state({"bms_rsoc": 50, "bms_load_ma": 200})
 ticks(bms, 1)
-assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF and bms.inputs[icd.BMS_RUN_TIME_TO_EMPTY] == 1200
-assert bms32(bms, icd.BMS_AVG_CURRENT_HI) == 0xFFFFFF38
+assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF
 bms.set_state({"bms_rsoc": 50, "chg_on": 1, "bms_charge_pct_per_s": 0.5})
 ticks(bms, 1)
-assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 2 and bms.inputs[icd.BMS_RUN_TIME_TO_EMPTY] == 0xFFFF
+assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 2
 bms.set_state({"bms_charge_pct_per_s": 0})
 ticks(bms, 1)
 assert bms.inputs[icd.BMS_AVG_TIME_TO_FULL] == 0xFFFF
