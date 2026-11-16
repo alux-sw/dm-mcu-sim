@@ -217,7 +217,7 @@ class Sm:
             if addr in icd.SIGNED_INPUTS:
                 value = to_signed(value)
             regs[name] = value
-        for name, hi in (("BMS_CURRENT_mA", icd.BMS_CURRENT_HI), ("BMS_AVG_CURRENT_mA", icd.BMS_AVG_CURRENT_HI)):
+        for name, hi in (("BMS_CURRENT_mA", icd.BMS_CURRENT_HI),):
             current = (r[hi] << 16) | r[hi + 1]
             if current >= 0x80000000:
                 current -= 0x100000000
@@ -225,8 +225,6 @@ class Sm:
         regs["BMS_FAULT_FLAGS"] = (r[icd.BMS_FAULT_FLAGS_HI] << 16) | r[icd.BMS_FAULT_FLAGS_LO]
         regs["BMS_PF_STATUS"] = (r[icd.BMS_PF_STATUS_HI] << 16) | r[icd.BMS_PF_STATUS_LO]
         regs["BMS_SAFETY_STATUS"] = (r[icd.BMS_SAFETY_STATUS_HI] << 16) | r[icd.BMS_SAFETY_STATUS_LO]
-        regs["BMS_SAFETY_ALERT"] = (r[icd.BMS_SAFETY_ALERT_HI] << 16) | r[icd.BMS_SAFETY_ALERT_LO]
-        regs["BMS_PF_ALERT"] = (r[icd.BMS_PF_ALERT_HI] << 16) | r[icd.BMS_PF_ALERT_LO]
         decoded = {
             "mcu_status": bits(r[icd.MCU_STATUS], icd.MCU_STATUS_BITS),
             "hard_block": bits(r[icd.HARD_BLOCK], icd.HARD_BLOCK_BITS),

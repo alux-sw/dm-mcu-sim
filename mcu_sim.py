@@ -73,8 +73,8 @@ kSettable = {"fault_code": int, "safe_hold": bool, "pos": float, "chg_on": bool,
              "bms_rsoc": float, "bms_cell_mv": int, "bms_temp_c": float,
              "bms_cycle_count": int, "bms_charging_current_ma": int,
              "bms_weak_cell": int, "bms_weak_cell_mv": int, "bms_charge_pct_per_s": float, "bms_load_ma": int,
-             "bms_fault_flags": int, "bms_safety_alert": int, "bms_safety_status": int,
-             "bms_pf_alert": int, "bms_pf_status": int, "bms_fet_unknown": bool}
+             "bms_fault_flags": int, "bms_safety_status": int,
+             "bms_pf_status": int, "bms_fet_unknown": bool}
 kInjectDefaults = {
     "estop": False, "ac_ok": True, "drone_detected": True, "bms_link": True,
     "overcurrent": False, "limit_conflict": False, "mute": False,
@@ -169,9 +169,7 @@ class Mcu:
         self.sync_soc()
         self.bms_idle_since = None
         self.bms_fault_flags = 0
-        self.bms_safety_alert = 0
         self.bms_safety_status = 0
-        self.bms_pf_alert = 0
         self.bms_pf_status = 0
         self.bms_fet_unknown = False
         self.maint_active = 0
@@ -733,9 +731,6 @@ class Mcu:
         to_full_min = kBmsTimeUnknown
         if is_charging and self.bms_charge_pct_per_s > 0:
             to_full_min = int(-(-(100 - self.bms_rsoc) // (self.bms_charge_pct_per_s * 60)))
-        to_empty_min = kBmsTimeUnknown
-        if current_ma < 0:
-            to_empty_min = min(remain_mah * 60 // -current_ma, kBmsTimeUnknown - 1)
         cells = [int(round(c)) for c in self.output_cells()]
         if self.bms_fet_unknown:
             chg_fet = 0xFF
@@ -767,12 +762,6 @@ class Mcu:
         inp[icd.BMS_AVG_TIME_TO_FULL] = to_full_min
         inp[icd.BMS_CELL_MAX] = max(cells)
         inp[icd.BMS_CELL_MIN] = min(cells)
-        put32(inp, icd.BMS_SAFETY_ALERT_HI, self.bms_safety_alert)
-        put32(inp, icd.BMS_PF_ALERT_HI, self.bms_pf_alert)
-        # ponytail: 평균 전류·평균 방전 시간은 순시값 그대로, 1 분 이동 평균이 필요하면 그때 deque 로
-        put32(inp, icd.BMS_AVG_CURRENT_HI, current_ma)
-        inp[icd.BMS_RUN_TIME_TO_EMPTY] = to_empty_min
-        inp[icd.BMS_AVG_TIME_TO_EMPTY] = to_empty_min
         inp[icd.BMS_SERIAL_NUMBER] = 1234
         inp[icd.BMS_MANUFACTURE_DATE] = ((2026 - 1980) << 9) | (9 << 5) | 1
         inp[icd.BMS_DESIGN_CAPACITY] = kBmsDesignCapacitymAh
